@@ -66,8 +66,10 @@ There is no formatter or linter (deliberate; see ADR 0005). Whenever you need to
 
 - `src/full.liquid` - **Generated** production template to paste into TRMNL (do not edit). Built from `src/full.liquid.template` + `src/lib` by `bun run build`.
 - `src/full.liquid.template` - Hand-edited shell for `full.liquid`; one `@generated:helpers` marker where the build inlines the `src/lib` helpers.
-- `src/lib/` - The only hand-edited copy of the pure helpers, each with a `bun test` suite; the single source inlined into `full.liquid` and the `.gs` by the build (see ADR 0006 and `src/AGENTS.md`).
-- `build.mjs` - The build step (`bun run build`); inlines `src/lib` into both generated files.
+- `src/agenda.liquid` - **Generated** week agenda view (a second private plugin for the same playlist: 4 x 2 grid of the current week plus a today's-weather tile, events as a list; needs middleware v10+, which sends events from the start of the week). Built from `src/agenda.liquid.template` + `src/lib` by `bun run build`. Same polling URLs and fit-to-screen approach as `full.liquid`.
+- `src/month.liquid` - **Generated** month-at-a-glance view (a third private plugin for the same playlist: today's date, holidays and weather on top, then a five-week grid with multi-day bars). Built from `src/month.liquid.template` + `src/lib` by `bun run build`. Needs the five-week calendar window (`CONFIG.daysAhead` 35 in the middleware).
+- `src/lib/` - The only hand-edited copy of the pure helpers, each with a `bun test` suite; the single source inlined into `full.liquid`, `agenda.liquid`, `month.liquid` and the `.gs` by the build (see ADR 0006 and `src/AGENTS.md`).
+- `build.mjs` - The build step (`bun run build`); inlines `src/lib` into all four generated files.
 - `src/settings.yml` - Plugin settings + polling URLs for trmnlp local dev
 - `src/form_fields.yml` - Plugin form fields shown when installing the recipe
 - `src/middleware/calendar_weather_proxy.gs` - **Generated** Apps Script middleware to paste at script.google.com (do not edit; built from `...gs.template` + `src/lib/middleware.js`). Setup in `MIDDLEWARE_SETUP.md`; area doc in `src/middleware/AGENTS.md`.

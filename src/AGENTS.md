@@ -6,16 +6,21 @@ Repo-wide conventions, the ADR index, and the Git workflow live in the root `AGE
 
 ## Pure helpers: single source in `src/lib/`, inlined by the build
 
-`src/lib/*.js` is the only hand-edited copy of the pure helpers and the tested source of truth. `build.mjs` (run `bun run build`) inlines them into the committed `full.liquid` at the `@generated:helpers` marker in `full.liquid.template`. There is no second copy to keep in sync; the drift test enforces it (ADR 0006).
+`src/lib/*.js` is the only hand-edited copy of the pure helpers and the tested source of truth. `build.mjs` (run `bun run build`) inlines them into the committed `full.liquid`, `agenda.liquid` and `month.liquid` at the `@generated:helpers` marker in each `*.liquid.template`. There is no second copy to keep in sync; the drift test enforces it (ADR 0006).
 
 | `src/lib/` module | Functions | Inlined into |
 |---|---|---|
-| `eventLayout.js` | `toMin`, `layoutOverlaps` | `full.liquid` |
+| `eventLayout.js` | `toMin`, `layoutOverlaps` | `full.liquid`, `agenda.liquid`, `month.liquid` |
 | `dateLabels.js` | `dayInfo`, `calKey` | `full.liquid` |
-| `ignoredEvents.js` | `compileIgnoredPhrases`, `isIgnoredEvent` | `full.liquid` |
-| `jsonRecovery.js` | `sanitizeJson`, `parseLiquid`, `hasCalData`, `isFailedPollingSlot`, `isEmptyPollingSlot`, `deepParse` | `full.liquid` |
+| `ignoredEvents.js` | `compileIgnoredPhrases`, `isIgnoredEvent` | `full.liquid`, `agenda.liquid`, `month.liquid` |
+| `jsonRecovery.js` | `sanitizeJson`, `parseLiquid`, `hasCalData`, `isFailedPollingSlot`, `isEmptyPollingSlot`, `deepParse` | `full.liquid`, `agenda.liquid`, `month.liquid` |
 | `diagnosticSeverity.js` | `allDiagnosticsAreTransient` | `full.liquid` |
-| `weatherIcon.js` | `wIcon` | `full.liquid` |
+| `weatherIcon.js` | `wIcon` | `full.liquid`, `agenda.liquid`, `month.liquid` |
+| `aqiShade.js` | `aqiShade` | `full.liquid`, `agenda.liquid` |
+| `timeFormat.js` | `fmt12`, `fmtRange12`, `hourLabel12`, `gridRange` | `full.liquid`, `month.liquid` |
+| `eventColors.js` | `PERSON_COLORS`, `PERSON_ORDER`, `personForColor` | `full.liquid`, `agenda.liquid`, `month.liquid` |
+| `agenda.js` | `addDays`, `weekStart`, `fmtClock`, `agendaDays` | `agenda.liquid`, `month.liquid` |
+| `monthGrid.js` | `monthWeeks`, `weatherText` | `month.liquid` |
 | `middleware.js` | `cleanText`, `cacheKey`, `forecastUrl` | `src/middleware/calendar_weather_proxy.gs` |
 
 `isIgnoredEvent` takes its compiled-phrases array as a parameter so the module is pure. The build emits it as `isIgnoredEventPure` plus a wrapper `isIgnoredEvent(ev)` that binds `IGNORED_PHRASES`, so the template's call sites are unchanged. (`cleanText` gets the same treatment in the `.gs`; see `src/middleware/AGENTS.md`.)
