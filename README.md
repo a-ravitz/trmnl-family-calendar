@@ -1,207 +1,150 @@
-# TRMNL Calendar + Weather Plugin
+# TRMNL Family Calendar
 
-A custom [TRMNL](https://usetrmnl.com) plugin that combines your **Google Calendar** weekly view with a **7-day weather forecast** and **air quality** data.
+Three [TRMNL](https://usetrmnl.com) e-ink views of one shared family Google Calendar, with weather and air quality. They run as three private plugins in one playlist on a **TRMNL X** (1872 x 1404, 4-bit grayscale).
 
-> Designed for the **TRMNL (OG)** in **full** view (800x480) with the [2-bit palette](https://help.trmnl.com/en/articles/12985974-understanding-color-palettes#:~:text=transitions%20between%20screens-,Changing%20the%20Palette,-The%20preferred%20color) enabled. *TRMNL (X) is not supported.*
+| Plugin | What it shows |
+|---|---|
+| **Calendar + Weather (X)** | The week as an hour-by-hour time grid (7 AM to 10 PM), with hourly temperature and rain behind each day |
+| **Week Agenda (X)** | The current week, Sunday to Saturday, as easy-to-read event lists in a 4 x 2 grid, plus a weather tile for today |
+| **Month at a Glance (X)** | Today's date, holidays, and weather on top, then five weeks as a month grid |
 
-![Demo](calendar-weather-demo.png)
+This project is a fork of [guplem/trmnl-cal-weather](https://github.com/guplem/trmnl-cal-weather). That project built the time-grid view, the Apps Script middleware, and the test and build setup. This fork adapts them for the TRMNL X and a family calendar, and adds the two other views.
 
 ## Features
 
-- **Time-grid weekly calendar** - Events positioned at their actual time slots, just like Google Calendar
-- **Multiple Google Calendars** - Each calendar gets a distinct grayscale bar pattern (supports up to 11 calendars)
-- **Overlapping events** - Displayed side by side automatically
-- **Weather forecast per day** - Icon + min/max temperature in a compact row near the top
-- **Hourly weather charts** - Precipitation probability bars + temperature line behind each day's header
-- **Hourly forecast on time axis** - Temperature labels at each half-hour mark, with precipitation probability bars behind them
-- **Current conditions** - Current temperature and today's rain probability in the top-left corner
-- **Sunrise/sunset, UV index, air quality** - Displayed in the bottom legend row
-- **Current time indicator** - Bold tick on the time axis
-- **Past events dimmed** - Gray background for events that have already ended (vs white for upcoming ones)
-- **Week start separator** - Darker vertical line at the first day of the week (taken from your Google Calendar plugin settings)
-- **All-day events** - Displayed in a dedicated strip with the same grayscale pattern bars as timed events
-- **Event details** - Location and description shown for longer events
-- **Graceful degradation** - Works with partial data (calendar only, weather only, or both)
-- **2-bit optimized** - Uses the four native grayscale shades
+**In all three views**
 
-## Prerequisites
+- **Person color code.** Each Google Calendar event color stands for a person. The screen draws each person with a different grayscale bar pattern, and the legend names the color to use.
 
-- A **TRMNL (OG)** with the **[2-bit palette](https://help.trmnl.com/en/articles/12985974-understanding-color-palettes#:~:text=transitions%20between%20screens-,Changing%20the%20Palette,-The%20preferred%20color) enabled** (available with [firmware >=1.6.0](https://github.com/usetrmnl/trmnl-firmware/releases/tag/v1.6.0#:~:text=Adds%202%2Dbit%20grayscale)) and **Developer perks** enabled (comes with BYOD or Developer Edition)
-- A **Google account** with access to the calendars you want to display (it will run the middleware)
+  | Google color | Who |
+  |---|---|
+  | Tomato | Family |
+  | Banana | Lindy |
+  | Grape | Adam |
+  | Basil | Julian |
+  | Blueberry | Birthdays |
+  | Graphite | Holidays (white text on black) |
+  | Any other color | Other |
+
+- **12-hour times**, Fahrenheit, mph, and the US air quality index (AQI)
+- **Earlier days and finished events in dark gray**, so they stay readable on e-ink
+- **Fits the TRMNL X screen.** The views also work on the 800 x 480 TRMNL OG.
+
+**Calendar + Weather (X)**
+
+- Events at their real time slots, with overlapping events side by side
+- A fixed 7 AM to 10 PM range that grows to fit an earlier or later event
+- The current half hour highlighted; weekends shaded
+- Sunrise, sunset, UV index, wind and gusts, and AQI in the legend; the AQI number gets darker as air quality gets worse
+
+**Week Agenda (X)**
+
+- Sunday to Saturday, with today outlined in black
+- Each event shows its start time, end time, title, and location
+- A busy day ends with "+ N more" instead of a cut-off row
+
+**Month at a Glance (X)**
+
+- Five weeks from the start of the current week
+- Multi-day events (trips, school closures) drawn as one bar across their days
+- Long event names wrap when the day has room
+- Today's holidays listed under the date
+
+## How it works
+
+```
+TRMNL polls three URLs (about every 15 min)
+    |
+    +--> ?src=cal      events from the start of this week, 35 days ahead
+    +--> ?src=weather  Open-Meteo forecast (Fahrenheit, mph)
+    +--> ?src=aqi      Open-Meteo air quality (US AQI)
+              |
+    Google Apps Script middleware (free, on your own Google account)
+        reads Google Calendar directly
+        serves everything from a cache that a 15-minute trigger keeps warm
+              |
+    Three Liquid templates (one per plugin), all reading the same data:
+        src/full.liquid     Calendar + Weather
+        src/agenda.liquid   Week Agenda
+        src/month.liquid    Month at a Glance
+```
+
+All three plugins use the same middleware and the same three polling URLs.
 
 ## Setup
 
-> **Quick install:** the plugin is published as an unlisted recipe on the TRMNL dashboard at [trmnl.com/recipes/282491](https://trmnl.com/recipes/282491). The recipe pre-fills the polling URLs and markup template (Steps 2 and 3 below), so you only need to follow Step 1 (deploy the middleware), then fill in the form fields when installing. Step 4 (Test) is recommended to verify the install.
-
 ### Step 1: Deploy the middleware
 
-All data (calendar, weather, air quality) is served by a small **Google Apps Script** that you deploy once on your own Google account. It is free, takes ~10 minutes, and needs no server. Follow **[MIDDLEWARE_SETUP.md](MIDDLEWARE_SETUP.md)**.
+Follow **[MIDDLEWARE_SETUP.md](MIDDLEWARE_SETUP.md)** to deploy `src/middleware/calendar_weather_proxy.gs` as a Google Apps Script web app. It takes about 10 minutes and needs no server.
 
-You will end up with the two values used in the next step:
+In the script's `CONFIG`:
 
-- `YOUR_SCRIPT_URL` - the web app URL (ends in `/exec`)
-- `YOUR_SECRET_TOKEN` - the token you set in the script's `CONFIG`
+- Set `token` to a long random secret. Never commit it; the repo copy keeps the `YOUR_SECRET_TOKEN` placeholder.
+- Optionally list your calendar IDs in `calendarIds`. Left empty, the script reads every calendar that is checked in Google Calendar.
+- `firstDayOfWeek` is `0` (Sunday). Use `1` for Monday.
 
-> Why a middleware? TRMNL's native Google Calendar plugin stops syncing while hidden in a playlist, and TRMNL's fixed 30s polling timeout trips on slow Open-Meteo responses. The script reads your calendars directly from Google and serves Open-Meteo from a cache, which removes both failure modes.
+You end up with a web app URL (ends in `/exec`) and your token.
 
-### Step 2: Create the Private Plugin
+### Step 2: Create the three private plugins
 
-1. Go to **Plugins** > search **Private Plugin** > **Create**
-2. Configure:
-   - **Name:** `Calendar + Weather`
-   - **Strategy:** `Polling`
-   - **Polling URL(s)** (one per line, replace `YOUR_SCRIPT_URL`, `YOUR_SECRET_TOKEN`, and your coordinates/timezone):
+For each plugin: go to **Plugins > Private Plugin > Add new**, then:
 
-```
-YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=cal&tz=YOUR_TIMEZONE
-YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=weather&lat=YOUR_LAT&lon=YOUR_LON&tz=YOUR_TIMEZONE
-YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=aqi&lat=YOUR_LAT&lon=YOUR_LON&tz=YOUR_TIMEZONE
-```
+1. Give it a name, for example `Week Agenda (X)`.
+2. Set **Strategy** to `Polling` and **Polling Verb** to `GET`.
+3. Add the three polling URLs, one per line. Replace the capitalized parts:
 
-   - **Polling Verb:** `GET`
+   ```
+   YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=cal&tz=YOUR_TIMEZONE
+   YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=weather&lat=YOUR_LAT&lon=YOUR_LON&tz=YOUR_TIMEZONE
+   YOUR_SCRIPT_URL?token=YOUR_SECRET_TOKEN&src=aqi&lat=YOUR_LAT&lon=YOUR_LON&tz=YOUR_TIMEZONE
+   ```
 
-3. Save
+   To keep the token out of the URL field, paste the form fields from [`src/form_fields.yml`](src/form_fields.yml) into the plugin's custom fields and use `{{ middleware_url }}` and `{{ middleware_token }}` in the URLs. The token then lives in a password field.
 
-> No polling headers are needed; the `token` parameter is the authentication.
+4. Save, then open **Edit Markup** (Full view) and paste the whole matching file:
 
-> The third URL (air quality) is optional. Remove it if you don't need AQI data.
+   | Plugin | Paste this file |
+   |---|---|
+   | Calendar + Weather (X) | [`src/full.liquid`](src/full.liquid) |
+   | Week Agenda (X) | [`src/agenda.liquid`](src/agenda.liquid) |
+   | Month at a Glance (X) | [`src/month.liquid`](src/month.liquid) |
 
-### Step 3: Add the template
+5. Save, click **Force Refresh**, and add the plugin to your playlist. TRMNL sometimes adds a new plugin to the playlist by itself; remove any duplicate.
 
-1. Open your Private Plugin's settings
-2. Go to the **Markup** tab (Full view)
-3. Copy the entire contents of [`src/full.liquid`](src/full.liquid) and paste it in
-4. Save
+### Step 3: Color-code your events
 
-> `src/full.liquid` and `src/middleware/calendar_weather_proxy.gs` are **generated** files, ready to paste as-is. Do not edit them by hand. If you change the shared logic in `src/lib/` or a `*.template` file, run `bun run build` first to regenerate them (see [Local development](#local-development)).
+In Google Calendar, give each event the color of the person it belongs to (see the table above). Events with no color show as "Other". Put holidays in Graphite to get white-on-black labels.
 
-### Step 4: Test
-
-1. Click **Force Refresh** on the plugin page
-2. Wait ~30 seconds for data to be polled and rendered
-3. Check your TRMNL device
+To change the people or colors, edit `PERSON_COLORS` and `PERSON_ORDER` in [`src/lib/eventColors.js`](src/lib/eventColors.js), then rebuild (see below).
 
 ## Customization
 
-### Change location
+- **Location:** change `lat`, `lon`, and `tz` in the polling URLs. Find coordinates at [open-meteo.com](https://open-meteo.com/en/docs).
+- **Ignore events:** fill the **Ignored phrases** plugin setting with comma-separated, case-insensitive patterns, for example `^Work$`.
+- **Declined events** are hidden by the middleware. Set `CONFIG.hideDeclinedEvents` to `false` to show them.
+- **Hours on the time grid:** change the `7*60, 22*60` range passed to `gridRange` in `src/full.liquid.template`.
 
-Replace the `lat`, `lon`, and `tz` parameters in the polling URLs (`tz` appears on all three, `lat`/`lon` on weather and air quality):
+## Development
 
-| Parameter | Example |
-|-----------|---------|
-| `lat` | `41.39` (Barcelona) |
-| `lon` | `2.17` (Barcelona) |
-| `tz` | `Europe/Madrid` |
+The shared logic lives once in `src/lib/`, each part with unit tests. A build step inlines it into the four generated files that you paste into TRMNL and Apps Script: `src/full.liquid`, `src/agenda.liquid`, `src/month.liquid`, and `src/middleware/calendar_weather_proxy.gs`. Never edit those four by hand.
 
-Find your coordinates at [open-meteo.com](https://open-meteo.com/en/docs).
-
-### Choose calendars
-
-By default the middleware includes every calendar that is checked ("selected") in the Google Calendar UI of the account that deployed it. To pin an explicit set instead, list calendar IDs in `CONFIG.calendarIds` in the Apps Script and deploy a new version.
-
-### Ignore events
-
-Fill the **Ignored phrases** plugin setting with a comma-separated list of patterns. Each pattern is a case-insensitive [regular expression](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions) tested against the event title and description:
-
-| Pattern | Hides events that... |
-|---------|----------------------|
-| `Work` | contain "Work" anywhere (also "Workshop") |
-| `^Work$` | are titled exactly "Work" |
-| `\bSDG\b` | contain "SDG" as a whole word (not "SDGs") |
-
-An invalid regex is treated as literal text. Patterns cannot contain commas, so a quantifier like `{2,3}` cannot be used; alternation works within one pattern (e.g. `^(Work|SDG)$`).
-
-Events answered with "No" are hidden automatically by the middleware: your own declined invites, and events on a shared calendar that its owner declined. To keep showing them, set `CONFIG.hideDeclinedEvents` to `false` in the Apps Script and deploy a new version.
-
-### Calendar bar patterns
-
-Calendars are automatically assigned visual patterns based on alphabetical order of their names. The 11 available patterns cycle through:
-
-| # | Style |
-|---|-------|
-| 1 | Solid light gray |
-| 2 | Solid black |
-| 3 | White with black border |
-| 4 | Gray diagonal stripes |
-| 5 | Black diagonal stripes (reversed) |
-| 6 | Gray horizontal stripes |
-| 7 | Gray vertical stripes |
-| 8 | Black horizontal stripes |
-| 9 | Black vertical stripes |
-| 10 | Gray diagonal stripes (reversed) |
-| 11 | Black diagonal stripes |
-
-Calendar names are resolved from email addresses using Google Calendar's display names.
-
-### Temperature units
-
-Open-Meteo returns Celsius by default. For Fahrenheit, add `&temperature_unit=fahrenheit` to the URL built in `forecastUrl()` in the Apps Script, then deploy a new version.
-
-## Local development
-
-You can preview the plugin locally using [trmnlp](https://github.com/usetrmnl/trmnlp):
+With [Bun](https://bun.sh):
 
 ```bash
-gem install trmnl_preview
-cd trmnl-cal-weather
-trmnlp serve
+bun run build   # regenerate the four files after editing src/lib or a *.template
+bun test .      # run all tests, including a check that the generated files are current
 ```
 
-The `.trmnlp.yml` file includes sample data. The template auto-detects the trmnlp environment and reads data from custom fields.
-
-### Building the deployable files
-
-`src/full.liquid` and `src/middleware/calendar_weather_proxy.gs` are generated. The shared pure logic lives once in `src/lib/`, and a build step inlines it into those two files (from their `*.template` shells). After changing anything in `src/lib/` or a `*.template`, regenerate with [Bun](https://bun.sh):
-
-```bash
-bun run build
-```
-
-Then paste the regenerated `src/full.liquid` into the TRMNL markup editor and the regenerated `src/middleware/calendar_weather_proxy.gs` into the Apps Script editor. Never edit the two generated files directly; a test fails if they drift from the build output.
-
-### Running the tests
-
-The pure logic (time parsing, overlap layout, ignored-event matching, JSON recovery, text cleanup) lives in `src/lib/` and is covered by unit tests. Run them with [Bun](https://bun.sh):
-
-```bash
-bun test .
-```
-
-## Architecture
-
-```
-TRMNL Polling (every ~15 min)
-    |
-    +--> IDX_0: ?src=cal      (events + calendar names)
-    |
-    +--> IDX_1: ?src=weather  (daily + hourly + current)
-    |
-    +--> IDX_2: ?src=aqi      (optional, European AQI)
-              |
-    Google Apps Script middleware (free, your own account)
-        reads Google Calendar directly
-        serves Open-Meteo from a cache (15-min trigger)
-              |
-        Liquid Template (full.liquid)
-              |
-        JS builds time-grid layout
-        groups events by date
-        positions at actual time slots
-        handles overlaps side-by-side
-              |
-        Rendered to 800x480 e-ink bitmap
-```
-
-## Data sources
-
-- **Calendar:** your Google Calendar, read directly by the [Apps Script middleware](MIDDLEWARE_SETUP.md) (no TRMNL Google Calendar plugin involved)
-- **Weather:** [Open-Meteo](https://open-meteo.com) free forecast API (no key, no registration), served through the middleware cache
-- **Air Quality:** [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api) (European AQI, optional)
+After a build, paste the regenerated file into the matching TRMNL markup editor. After editing the Apps Script, deploy it as a **New version** (Deploy > Manage deployments > edit) so the `/exec` URL keeps working.
 
 ## Troubleshooting
 
-The plugin includes a **built-in diagnostic overlay** that appears on-screen when data issues are detected (e.g., missing calendar data, unexpected format, empty events). This makes it easier to identify problems without needing browser access. It is enabled by default; once your device is working reliably, you can turn it off via the **Show diagnostic overlay** plugin setting, since transient errors (such as a single failed weather call) recover on the next refresh and the overlay covers a large portion of the calendar.
+- **Only part of the calendar shows on the TRMNL X:** use the current templates. The X renderer draws the page at 1040 x 780, then resizes it to 1872 x 1404 before the capture, and the templates re-fit on that resize.
+- **New events do not appear:** the middleware cache refreshes every 15 minutes. Run `refreshUpstreamCaches` in the Apps Script editor to refresh it now, then **Force Refresh** the plugin.
+- **Later weeks are empty in the month view:** check that `CONFIG.daysAhead` is `35` in the deployed script.
 
-After any configuration change, **save the plugin** (top right) and click **Force Refresh** to generate a new preview image. After editing the Apps Script, remember code changes only go live after deploying a **New version** (Deploy > Manage deployments).
+More debugging steps are in **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
-For detailed debugging steps, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
+## Credits
+
+The time-grid view, the middleware, and the build and test setup come from [guplem/trmnl-cal-weather](https://github.com/guplem/trmnl-cal-weather). Weather and air quality data come from [Open-Meteo](https://open-meteo.com).
