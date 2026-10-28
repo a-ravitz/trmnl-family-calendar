@@ -28,10 +28,12 @@
   .ag-col.is-today { box-shadow: inset 0 0 0 3px #000; }
   .ag-col.is-today .ag-head { background: #000; }
   .ag-weather .ag-head { background: #000; }
-  .ag-col.is-pastday .ag-head { background: #AAA; }
-  /* Past items use the dark gray (#555), not #AAA: #AAA text is too faint to read on the e-ink screen. */
-  .ag-col.is-pastday .ag-allday { color: #555; border-color: #555; font-weight: normal; }
-  .ag-col.is-pastday .ag-allday.is-invert { background: #555; color: #fff; }
+  /* Past days: near-black #333 text and a #DDD header. The TRMNL X draws 16 native
+     grays, so these two shades do not dither there; #AAA and #555 text read too faint
+     on e-ink. A 2-bit TRMNL OG dithers them (see ADR 0004). */
+  .ag-col.is-pastday .ag-head { background: #DDD; color: #333; }
+  .ag-col.is-pastday .ag-allday { color: #333; border-color: #333; font-weight: normal; }
+  .ag-col.is-pastday .ag-allday.is-invert { background: #333; color: #fff; }
   .ag-day { font-size: 15px; font-weight: bold; }
   .ag-date { font-size: 12px; font-weight: bold; }
 
@@ -56,9 +58,9 @@
   .ag-body { flex: 1; min-width: 0; line-height: 1.15; }
   .ag-title { font-size: 13px; font-weight: bold; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
   .ag-loc { font-size: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ag-evt.is-past .ag-start, .ag-evt.is-past .ag-title { color: #555; font-weight: normal; }
-  .ag-evt.is-past .ag-end, .ag-evt.is-past .ag-loc { color: #555; }
-  .ag-empty { font-size: 12px; color: #AAA; padding: 6px 2px; }
+  .ag-evt.is-past .ag-start, .ag-evt.is-past .ag-title { color: #333; font-weight: normal; }
+  .ag-evt.is-past .ag-end, .ag-evt.is-past .ag-loc { color: #333; }
+  .ag-empty { font-size: 12px; color: #555; padding: 6px 2px; }
   .ag-more { font-size: 12px; font-weight: bold; color: #555; padding: 2px 2px 4px; }
 
   .ag-legend { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-top: 2px solid #000; font-size: 11px; white-space: nowrap; overflow: hidden; }
