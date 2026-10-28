@@ -39,7 +39,8 @@
   .mo-num { position: absolute; top: 2px; right: 4px; font-size: 15px; font-weight: bold; line-height: 18px; }
   .mo-num small { font-size: 11px; margin-right: 2px; }
   .mo-day.is-today .mo-num { background: #000; color: #fff; border-radius: 3px; padding: 0 5px; }
-  .mo-day.is-past .mo-num { color: #AAA; }
+  /* Past days use the dark gray (#555), not #AAA: #AAA text is too faint to read on the e-ink screen. */
+  .mo-day.is-past .mo-num { color: #555; }
 
   .mo-bar { position: absolute; height: 15px; display: flex; align-items: stretch; font-size: 11px; font-weight: bold;
     background: #fff; border: 1px solid #555; border-radius: 3px; overflow: hidden; white-space: nowrap; z-index: 2; }
@@ -47,8 +48,8 @@
   .mo-bar.contR { border-top-right-radius: 0; border-bottom-right-radius: 0; }
   .mo-bar span { padding: 0 4px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; }
   .mo-bar.is-invert { background: #000; color: #fff; border-color: #000; }
-  .mo-bar.is-past { color: #AAA; border-color: #AAA; }
-  .mo-bar.is-invert.is-past { background: #AAA; color: #fff; }
+  .mo-bar.is-past { color: #555; border-color: #555; font-weight: normal; }
+  .mo-bar.is-invert.is-past { background: #555; color: #fff; }
 
   .mo-list { position: absolute; left: 3px; right: 3px; bottom: 1px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
   .mo-item { display: flex; align-items: stretch; font-size: 11px; line-height: 13px; white-space: nowrap; flex-shrink: 0; }
@@ -56,8 +57,9 @@
   .mo-item b { font-weight: bold; margin-right: 3px; }
   .mo-item.is-allday { border: 1px solid #555; border-radius: 3px; font-weight: bold; }
   .mo-item.is-invert { background: #000; color: #fff; border-color: #000; }
-  .mo-item.is-past { color: #AAA; border-color: #AAA; }
-  .mo-item.is-invert.is-past { background: #AAA; color: #fff; }
+  .mo-item.is-past { color: #555; border-color: #555; font-weight: normal; }
+  .mo-item.is-past b { font-weight: normal; }
+  .mo-item.is-invert.is-past { background: #555; color: #fff; }
   /* Wrapped mode: long names use up to three lines when the day has room. */
   .mo-list.is-wrap .mo-item { white-space: normal; }
   .mo-list.is-wrap .mo-item span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
@@ -71,7 +73,7 @@
   .mo-bar-5 { background: repeating-linear-gradient(0deg, #AAA 0px, #AAA 2px, #fff 2px, #fff 4px); }
   .mo-bar-7 { background: repeating-linear-gradient(0deg, #000 0px, #000 2px, #fff 2px, #fff 4px); }
   .mo-bar-10 { background: repeating-linear-gradient(45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
-  .is-past .mo-stripe { opacity: 0.4; }
+  .is-past .mo-stripe { opacity: 0.6; }
 
   .mo-error { padding: 20px; font-size: 16px; }
 </style>
