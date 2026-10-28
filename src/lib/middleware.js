@@ -42,9 +42,11 @@ export function forecastUrl(location) {
   return 'https://api.open-meteo.com/v1/forecast' +
     '?latitude=' + encodeURIComponent(location.lat) +
     '&longitude=' + encodeURIComponent(location.lon) +
-    '&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset,uv_index_max' +
+    '&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max' +
     '&hourly=temperature_2m,precipitation_probability' +
     '&current=temperature_2m' +
+    '&temperature_unit=fahrenheit' +
+    '&wind_speed_unit=mph' +
     '&timezone=' + encodeURIComponent(location.tz) +
     '&forecast_days=7';
 }

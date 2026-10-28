@@ -38,4 +38,12 @@ describe("forecastUrl", () => {
     expect(url).toContain("timezone=Europe%2FMadrid"); // encodeURIComponent
     expect(url).toContain("forecast_days=7");
   });
+
+  it("asks for Fahrenheit, mph, and the daily wind the templates show", () => {
+    const url = forecastUrl({ lat: 39.92, lon: -75.18, tz: "America/New_York" });
+    expect(url).toContain("temperature_unit=fahrenheit");
+    expect(url).toContain("wind_speed_unit=mph");
+    expect(url).toContain("wind_speed_10m_max");
+    expect(url).toContain("wind_gusts_10m_max");
+  });
 });

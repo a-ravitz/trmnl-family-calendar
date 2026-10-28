@@ -38,9 +38,9 @@ const CONFIG = {
   // Use a long random string (40+ characters).
   token: 'YOUR_SECRET_TOKEN',
 
-  // Calendar window: today .. today + daysAhead. The template renders 7
-  // days; the extra buffer is cheap and avoids edge cases around midnight.
-  daysAhead: 10,
+  // Calendar window: start of the current week .. today + daysAhead. The month
+  // view (month.liquid) renders five weeks from the start of the current week.
+  daysAhead: 35,
 
   // [] = every calendar that is checked ("selected") in the Google Calendar
   // UI of the account that owns this script. To pin specific calendars,
@@ -49,7 +49,7 @@ const CONFIG = {
   calendarIds: [],
 
   // Sent to the template as first_day. 0 = Sunday, 1 = Monday.
-  firstDayOfWeek: 1,
+  firstDayOfWeek: 0,
 
   // Skip events you have declined (RSVP "No") in Google Calendar.
   hideDeclinedEvents: true,
@@ -67,7 +67,7 @@ const CONFIG = {
 // Bump on every code change and check it in the ?src=cal response: it proves
 // which code version the /exec URL is actually serving (see the Apps Script
 // deploy gotcha in src/middleware/AGENTS.md).
-const MIDDLEWARE_VERSION = 6;
+const MIDDLEWARE_VERSION = 11;
 
 const ISO_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX";
 
@@ -77,7 +77,7 @@ function airQualityUrl(location) {
   return 'https://air-quality-api.open-meteo.com/v1/air-quality' +
     '?latitude=' + encodeURIComponent(location.lat) +
     '&longitude=' + encodeURIComponent(location.lon) +
-    '&current=european_aqi' +
+    '&current=us_aqi' +
     '&timezone=' + encodeURIComponent(location.tz);
 }
 
@@ -124,8 +124,12 @@ function buildCalendarPayload(tz, debug) {
   // Derive "today at midnight" via formatDate so the window is correct even
   // if the script project timezone differs from the requested tz.
   const todayParts = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd').split('-');
-  const windowStart = new Date(+todayParts[0], +todayParts[1] - 1, +todayParts[2]);
-  const windowEnd = new Date(windowStart.getTime() + CONFIG.daysAhead * 24 * 60 * 60 * 1000);
+  const todayStart = new Date(+todayParts[0], +todayParts[1] - 1, +todayParts[2]);
+  // Start at the first day of the current week, so a fixed-week view (the
+  // week agenda plugin) can show the days earlier in the week too.
+  const daysBack = (todayStart.getDay() - CONFIG.firstDayOfWeek + 7) % 7;
+  const windowStart = new Date(+todayParts[0], +todayParts[1] - 1, +todayParts[2] - daysBack);
+  const windowEnd = new Date(todayStart.getTime() + CONFIG.daysAhead * 24 * 60 * 60 * 1000);
 
   const events = [];
   const calendarNames = {};
@@ -238,7 +242,10 @@ function formatEvent(event, calendarId, tz, debug) {
     start_full: startFull,
     end_full: Utilities.formatDate(event.getEndTime(), tz, ISO_FORMAT),
     date_time: startFull,
-    calname: calendarId
+    calname: calendarId,
+    // Google event colorId ('' when the event uses the calendar color); the
+    // template maps it to a person (see src/lib/eventColors.js).
+    color: event.getColor()
   };
   if (debug) formatted.debug_rsvp = describeRsvp(event, calendarId);
   return formatted;
@@ -276,8 +283,13 @@ function fetchAndCache(key, url) {
   try {
     const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     if (response.getResponseCode() === 200) {
-      const text = response.getContentText();
-      const parsed = JSON.parse(text); // validate before caching
+      const parsed = JSON.parse(response.getContentText()); // validate before caching
+      // US AQI: the template reads current.european_aqi, so expose the US value there too.
+      if (parsed.current && parsed.current.us_aqi !== undefined) {
+        parsed.current.european_aqi = parsed.current.us_aqi;
+        if (parsed.current_units) parsed.current_units.european_aqi = parsed.current_units.us_aqi;
+      }
+      const text = JSON.stringify(parsed);
       CacheService.getScriptCache().put(key, text, CONFIG.cacheMaxAgeSeconds);
       return parsed;
     }
