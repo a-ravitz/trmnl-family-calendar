@@ -1,0 +1,590 @@
+{% comment %} GENERATED FILE - do not edit directly. Edit src/lib/*.js and src/agenda.liquid.template, then run `bun run build`. {% endcomment %}
+{% comment %}
+  Week Agenda - TRMNL private plugin (full view).
+  A companion to full.liquid for the same playlist: the current week
+  (Sunday to Saturday, or from the configured first day) as an easy-to-read
+  list in a 4 x 2 grid: three days and today's weather on the top row, four
+  days on the bottom row, with each event's time beside its title. The
+  today marker moves through the week; earlier days are grayed out. It reads the same three polling URLs as full.liquid:
+    IDX_0 = ?src=cal, IDX_1 = ?src=weather, IDX_2 = ?src=aqi (unused here).
+  Design size is 800 x 480; fitToScreen() scales it to the device.
+{% endcomment %}
+
+<style>
+  * { box-sizing: border-box; }
+  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; }
+  /* Sized by fitToScreen() in the script; see full.liquid.template for why. */
+  #ag-container { position: fixed; left: 0; top: 0; transform-origin: 0 0; background: #fff; z-index: 1; }
+  .ag-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: none; color: #000; }
+  .ag-cols { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .ag-row { flex: 1; display: flex; min-height: 0; }
+  .ag-row + .ag-row { border-top: 2px solid #000; }
+  .ag-col { flex: 1; display: flex; flex-direction: column; min-width: 0; border-left: 2px solid #000; }
+  .ag-col:first-child { border-left: none; }
+
+  .ag-head { background: #000; color: #fff; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 2px 6px 1px; white-space: nowrap; }
+  /* Past days: light gray header. Today: black header and a thick outline. Later days: dark gray. */
+  .ag-head { background: #555; }
+  .ag-col.is-today { box-shadow: inset 0 0 0 3px #000; }
+  .ag-col.is-today .ag-head { background: #000; }
+  .ag-weather .ag-head { background: #000; }
+  .ag-col.is-pastday .ag-head { background: #AAA; }
+  .ag-col.is-pastday .ag-allday { color: #AAA; border-color: #AAA; }
+  .ag-col.is-pastday .ag-allday.is-invert { background: #AAA; color: #fff; }
+  .ag-day { font-size: 15px; font-weight: bold; }
+  .ag-date { font-size: 12px; font-weight: bold; }
+
+  .ag-wx { display: flex; align-items: center; gap: 5px; padding: 1px 6px; border-bottom: 1px solid #000; height: 24px; }
+  .ag-wx svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .ag-temps { font-size: 13px; }
+  .ag-temps b { font-weight: bold; }
+  .ag-wx-extra { margin-left: auto; font-size: 11px; color: #555; display: flex; align-items: center; gap: 2px; }
+  .ag-wx-extra svg { width: 13px; height: 13px; }
+
+  .ag-list { flex: 1; min-height: 0; overflow: hidden; padding: 3px 5px 0; display: flex; flex-direction: column; gap: 3px; }
+  .ag-allday { display: flex; align-items: stretch; font-size: 12px; font-weight: bold; border: 1px solid #000; min-height: 17px; flex-shrink: 0; }
+  .ag-allday .ag-bar { width: 5px; }
+  .ag-allday span { padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag-allday.is-invert { background: #000; color: #fff; }
+
+  .ag-evt { display: flex; align-items: stretch; gap: 5px; padding: 2px 0 3px; border-bottom: 1px dashed #AAA; flex-shrink: 0; }
+  .ag-evt .ag-bar { width: 5px; flex-shrink: 0; }
+  .ag-time { width: 58px; flex-shrink: 0; line-height: 1.15; }
+  .ag-start { font-size: 12px; font-weight: bold; white-space: nowrap; }
+  .ag-end { font-size: 10px; color: #555; white-space: nowrap; }
+  .ag-body { flex: 1; min-width: 0; line-height: 1.15; }
+  .ag-title { font-size: 13px; font-weight: bold; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .ag-loc { font-size: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag-evt.is-past .ag-start, .ag-evt.is-past .ag-title { color: #AAA; }
+  .ag-evt.is-past .ag-end, .ag-evt.is-past .ag-loc { color: #AAA; }
+  .ag-empty { font-size: 12px; color: #AAA; padding: 6px 2px; }
+  .ag-more { font-size: 12px; font-weight: bold; color: #555; padding: 2px 2px 4px; }
+
+  .ag-legend { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-top: 2px solid #000; font-size: 11px; white-space: nowrap; overflow: hidden; }
+  .ag-legend-item { display: flex; align-items: center; gap: 4px; }
+  .ag-legend-swatch { width: 7px; height: 12px; }
+  .ag-legend-color { color: #555; }
+  .ag-legend-inv { background: #000; color: #fff; font-weight: bold; padding: 0 3px; }
+
+  .ag-bar-0 { background: #AAA; }
+  .ag-bar-1 { background: #000; }
+  .ag-bar-2 { background: #fff; border: 1px solid #000; }
+  .ag-bar-4 { background: repeating-linear-gradient(-45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .ag-bar-5 { background: repeating-linear-gradient(0deg, #AAA 0px, #AAA 2px, #fff 2px, #fff 4px); }
+  .ag-bar-7 { background: repeating-linear-gradient(0deg, #000 0px, #000 2px, #fff 2px, #fff 4px); }
+  .ag-bar-10 { background: repeating-linear-gradient(45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+
+  .ag-error { padding: 20px; font-size: 16px; }
+
+  /* Today's weather tile (top right). */
+  .ag-now { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; }
+  .ag-now svg { width: 52px; height: 52px; flex-shrink: 0; }
+  .ag-now-temp { font-size: 40px; font-weight: bold; line-height: 1; }
+  .ag-now-hilo { font-size: 13px; color: #555; }
+  .ag-now-hilo b { color: #000; }
+  .ag-facts { padding: 2px 8px; font-size: 12px; line-height: 1.45; }
+  .ag-facts b { font-weight: bold; }
+  .ag-hours { display: flex; margin: 4px 6px 0; border-top: 1px solid #000; padding-top: 3px; }
+  .ag-hour { flex: 1; text-align: center; font-size: 11px; line-height: 1.3; }
+  .ag-hour b { font-size: 13px; display: block; }
+  .ag-hour span { color: #555; }
+</style>
+
+<div id="ag-container"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var IGNORED_PHRASES = compileIgnoredPhrases(String.raw`{{ trmnl.plugin_settings.custom_fields_values.ignored_phrases }}`);
+  /**
+   * Parse an event start time to minutes-since-midnight. Prefers the `start_full`
+   * ISO timestamp; falls back to a bare `HH:MM` or AM/PM `start` field. Returns
+   * -1 when there is no usable time (all-day events).
+   * @param {string} startField - AM/PM or HH:MM string, e.g. "9:00 AM" or "09:00"
+   * @param {string} fullField - ISO timestamp, e.g. "2026-04-09T08:55:00.000+02:00"
+   * @returns {number} minutes since midnight, or -1
+   */
+  function toMin(startField, fullField) {
+    // Prefer start_full ISO timestamp
+    if (fullField && fullField.length > 16) {
+      var tp = fullField.substring(11, 16).split(":");
+      return +tp[0] * 60 + +tp[1];
+    }
+    if (!startField) return -1;
+    // Handle AM/PM format
+    var s = startField.trim().toUpperCase();
+    var pm = s.indexOf("PM") > -1, am = s.indexOf("AM") > -1;
+    s = s.replace(/[AP]M/gi, "").trim();
+    var p = s.split(":");
+    var h = +p[0], m = +p[1] || 0;
+    if (pm && h < 12) h += 12;
+    if (am && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  /**
+   * Pack overlapping events into side-by-side columns. Mutates `evts` in place:
+   * sorts it, and sets `.col` (column index) and `.totalCols` (columns in the
+   * event's overlap cluster) on each element. Each element must have `.sm`
+   * (start minute) and `.em` (end minute).
+   * @param {Array<{sm:number, em:number, col?:number, totalCols?:number}>} evts
+   * @returns {void}
+   */
+  function layoutOverlaps(evts) {
+    evts.sort(function(a,b){return a.sm-b.sm||(b.em-b.sm)-(a.em-a.sm);});
+    var clusters=[];
+    for(var i=0;i<evts.length;i++){
+      var e=evts[i],placed=false;
+      for(var ci=0;ci<clusters.length;ci++){
+        if(e.sm<clusters[ci].end){clusters[ci].events.push(e);if(e.em>clusters[ci].end)clusters[ci].end=e.em;placed=true;break;}
+      }
+      if(!placed) clusters.push({end:e.em,events:[e]});
+    }
+    for(var ci=0;ci<clusters.length;ci++){
+      var ce=clusters[ci].events,cols=[];
+      for(var i=0;i<ce.length;i++){
+        var p=false;
+        for(var c=0;c<cols.length;c++){if(ce[i].sm>=cols[c]){cols[c]=ce[i].em;ce[i].col=c;p=true;break;}}
+        if(!p){ce[i].col=cols.length;cols.push(ce[i].em);}
+      }
+      for(var i=0;i<ce.length;i++) ce[i].totalCols=cols.length;
+    }
+  }
+
+  /**
+   * Compile a comma-separated "Ignored phrases" string into case-insensitive
+   * regular expressions. An invalid regex is escaped and matched as literal text.
+   * Empty entries are dropped.
+   * @param {string} raw - comma-separated patterns, e.g. "^Work$, Focus Time"
+   * @returns {RegExp[]} one RegExp per non-empty pattern
+   */
+  function compileIgnoredPhrases(raw) {
+    return String(raw)
+      .split(',')
+      .map(function(s){ return s.trim(); })
+      .filter(function(s){ return s.length > 0; })
+      .map(function(p){
+        try { return new RegExp(p, 'i'); }
+        catch(e) { return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); }
+      });
+  }
+
+  /**
+   * Return true when the event's title or description matches any ignored phrase.
+   * @param {{summary?:string, description?:string}} ev - the calendar event
+   * @param {RegExp[]} ignoredPhrases - compiled by compileIgnoredPhrases
+   * @returns {boolean}
+   */
+  function isIgnoredEventPure(ev, ignoredPhrases) {
+    for (var i = 0; i < ignoredPhrases.length; i++) {
+      if (ignoredPhrases[i].test(ev.summary || '') || ignoredPhrases[i].test(ev.description || '')) return true;
+    }
+    return false;
+  }
+
+  function isIgnoredEvent(ev) { return isIgnoredEventPure(ev, IGNORED_PHRASES); }
+
+  /**
+   * Escape the control characters that break JSON.parse (literal newlines/tabs
+   * in event descriptions or locations); drop other control characters.
+   * @param {string} s
+   * @returns {string}
+   */
+  function sanitizeJson(s) {
+    return s.replace(/[\x00-\x1f\x7f]/g, function(c) {
+      switch(c) {
+        case '\n': return '\\n';
+        case '\r': return '\\r';
+        case '\t': return '\\t';
+        default: return '';
+      }
+    });
+  }
+
+  /**
+   * Parse a Liquid-encoded JSON string: trmnlp's `json` filter emits Ruby hash
+   * syntax (` => ` instead of `: `), so convert it before parsing.
+   * @param {string} str
+   * @returns {*} the parsed value
+   */
+  function parseLiquid(str) { return JSON.parse(sanitizeJson(str.replace(/ => /g, ': '))); }
+
+  /**
+   * True when the object holds calendar events at `data.events` or `events`.
+   * @param {*} obj
+   * @returns {boolean}
+   */
+  function hasCalData(obj) { return obj && typeof obj === 'object' && ((obj.data && obj.data.events) || obj.events); }
+
+  /**
+   * True when TRMNL stored nothing usable for a polling slot. TRMNL keeps an
+   * empty array for a URL whose response it could not parse as JSON, and the
+   * middleware always answers with an object, so `[]` means the poll failed
+   * rather than that the data has an unexpected shape.
+   * @param {*} raw
+   * @returns {boolean}
+   */
+  function isFailedPollingSlot(raw) { return Array.isArray(raw) && raw.length === 0; }
+
+  /**
+   * True when TRMNL stored an object with no keys (`{}`) for a polling slot. The
+   * middleware always answers with a populated object (the upstream payload, or
+   * an `error` field), so `{}` means the poll did not deliver data on that cycle
+   * rather than that the middleware sent a wrong shape.
+   * @param {*} raw
+   * @returns {boolean}
+   */
+  function isEmptyPollingSlot(raw) { return !!raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0; }
+
+  /**
+   * Recover the calendar payload from raw data that may be double- or
+   * triple-encoded JSON (a string inside a string) and may wrap the events one
+   * level deep. Returns the object that holds the events, or null when the raw
+   * value cannot be parsed into an object at all.
+   * @param {*} raw
+   * @returns {object|null}
+   */
+  function deepParse(raw) {
+    if (raw == null) return null;
+    // If first parse returned a string, try parsing it again (double-encoded JSON)
+    if (typeof raw === 'string') { try { raw = JSON.parse(sanitizeJson(raw)); } catch(e) { return null; } }
+    if (typeof raw === 'string') { try { raw = JSON.parse(sanitizeJson(raw)); } catch(e) { return null; } } // triple-encoded edge case
+    if (typeof raw !== 'object' || raw === null) return null;
+    // If data is at expected path, return as-is
+    if (hasCalData(raw)) return raw;
+    // Search one level deeper for a wrapper (e.g., { "plugin_setting": { "data": { "events": [...] } } })
+    var keys = Object.keys(raw);
+    for (var i = 0; i < keys.length; i++) {
+      var child = raw[keys[i]];
+      if (child && typeof child === 'object' && hasCalData(child)) return child;
+    }
+    return raw; // return whatever we have; diagnostics will flag it if still bad
+  }
+
+  /**
+   * Map a WMO weather code to an inline SVG icon string.
+   * @param {number|string} c - WMO weather code
+   * @returns {string} an SVG markup string
+   */
+  function wIcon(c){c=+c||0;
+    // Clear/sunny: white-filled sun circle + rays
+    if(c<=1)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" fill="#fff"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="5" y1="5" x2="7" y2="7"/><line x1="17" y1="17" x2="19" y2="19"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="5" y1="19" x2="7" y2="17"/><line x1="17" y1="7" x2="19" y2="5"/></svg>';
+    // Cloudy/overcast: white-filled cloud
+    if(c<=3)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/></svg>';
+    // Fog: horizontal lines (no fill needed)
+    if(c>=45&&c<=48)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="5" y1="10" x2="19" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="5" y1="18" x2="19" y2="18"/></svg>';
+    // Drizzle/light showers: white-filled cloud + drops
+    if((c>=51&&c<=57)||c===80)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><line x1="8" y1="19" x2="7.5" y2="21"/><line x1="13" y1="19" x2="12.5" y2="21"/></svg>';
+    // Rain/heavy showers: white-filled cloud + drops
+    if((c>=61&&c<=67)||(c>=81&&c<=82))return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><line x1="7" y1="19" x2="6" y2="22"/><line x1="11" y1="19" x2="10" y2="22"/><line x1="15" y1="19" x2="14" y2="22"/></svg>';
+    // Snow: white-filled cloud + dots
+    if((c>=71&&c<=77)||(c>=85&&c<=86))return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><circle cx="8" cy="20" r="0.5" fill="#000"/><circle cx="12" cy="20" r="0.5" fill="#000"/><circle cx="16" cy="20" r="0.5" fill="#000"/></svg>';
+    // Thunderstorm: white-filled cloud + lightning
+    if(c>=95)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 16H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><polyline points="13,17 10,21 14,21 11,25" fill="none"/></svg>';
+    // Fallback: white-filled cloud
+    return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/></svg>';
+  }
+
+  /**
+   * Shade for a US AQI value: light gray when the air is good, dark gray when it
+   * is moderate, bold black when it is unhealthy. The bands follow the US EPA
+   * AQI categories (0-50 good, 51-100 moderate, 101+ unhealthy for some or all).
+   * Only native 2-bit shades are returned, so the number never dithers (ADR 0004).
+   * The return type is written without a double brace on purpose: this source
+   * is inlined into a Liquid template, where a double brace opens a Liquid tag.
+   * @param {number|null|undefined} aqi
+   * @returns {Object|null} color (hex) and bold (boolean), or null when there is no usable value
+   */
+  function aqiShade(aqi) {
+    if (aqi === null || aqi === undefined || isNaN(aqi)) return null;
+    if (aqi <= 50) return { color: '#AAA', bold: false };
+    if (aqi <= 100) return { color: '#555', bold: false };
+    return { color: '#000', bold: true };
+  }
+
+  /**
+   * Google Calendar event colorId to person. Each person gets one of the
+   * existing grayscale bar patterns (cw-bar-N) so no new color dithers (ADR 0004).
+   * colorName is the Google Calendar color name, shown in the legend so the
+   * family remembers which color to pick. `invert` draws the event as white
+   * text on black (holidays) instead of a patterned bar.
+   */
+  var PERSON_COLORS = {
+    '11': { name: 'Family', bar: 1, colorName: 'Tomato' },
+    '5': { name: 'Lindy', bar: 0, colorName: 'Banana' },
+    '3': { name: 'Adam', bar: 4, colorName: 'Grape' },
+    '10': { name: 'Julian', bar: 7, colorName: 'Basil' },
+    '9': { name: 'Birthdays', bar: 2, colorName: 'Blueberry' },
+    '8': { name: 'Holidays', bar: 10, colorName: 'Graphite', invert: true }
+  };
+
+  /**
+   * Legend order. Kept as an array because a JavaScript object iterates its
+   * integer-like keys (the colorIds) in numeric order, not insertion order.
+   */
+  var PERSON_ORDER = ['Family', 'Lindy', 'Adam', 'Julian', 'Birthdays', 'Holidays'];
+
+  /**
+   * Person for an event color, or null when the event has no mapped color.
+   * @param {string|number|undefined} colorId - Google Calendar event colorId
+   * @returns {Object|null} name and bar index, or null
+   */
+  function personForColor(colorId) {
+    if (colorId === undefined || colorId === null || colorId === '') return null;
+    return PERSON_COLORS[String(colorId)] || null;
+  }
+
+  /**
+   * Add whole days to an ISO date. Uses UTC math on purpose: local-time Date
+   * math shifts a date by one day on renderers west of UTC.
+   * @param {string} iso - "YYYY-MM-DD"
+   * @param {number} n - days to add (may be negative)
+   * @returns {string} "YYYY-MM-DD"
+   */
+  function addDays(iso, n) {
+    var p = iso.split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  }
+
+  /**
+   * First day of the week that contains `iso`.
+   * @param {string} iso - "YYYY-MM-DD"
+   * @param {number} firstDay - 0 = Sunday, 1 = Monday
+   * @returns {string} "YYYY-MM-DD"
+   */
+  function weekStart(iso, firstDay) {
+    var p = iso.split('-');
+    var dow = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return addDays(iso, -((dow - (firstDay || 0) + 7) % 7));
+  }
+
+  /**
+   * Easy-to-read 12-hour clock: "7:00 PM", "9:30 AM".
+   * @param {number} m - minutes since midnight (1440 counts as midnight)
+   * @returns {string}
+   */
+  function fmtClock(m) {
+    var t = ((m % 1440) + 1440) % 1440;
+    var h24 = Math.floor(t / 60), mm = t % 60;
+    var h = h24 % 12; if (h === 0) h = 12;
+    return h + ':' + (mm < 10 ? '0' : '') + mm + (h24 >= 12 ? ' PM' : ' AM');
+  }
+
+  /**
+   * Group events into `count` consecutive days starting at `today`. Each day
+   * holds its all-day events and its timed events sorted by start time, with
+   * `sm`/`em` in minutes. An end on a later day is clamped to midnight (1440).
+   * @param {Array<Object>} events - flat event array from the middleware
+   * @param {string} today - "YYYY-MM-DD" in the calendar's time zone
+   * @param {number} count - number of days
+   * @returns {Array<Object>} date, allDay, and timed for each day
+   */
+  function agendaDays(events, today, count) {
+    var days = [], byDate = {};
+    for (var i = 0; i < count; i++) {
+      var date = addDays(today, i);
+      var day = { date: date, allDay: [], timed: [] };
+      days.push(day); byDate[date] = day;
+    }
+    for (var j = 0; j < events.length; j++) {
+      var ev = events[j];
+      if (ev.all_day) {
+        var sd = (ev.start_full || ev.start || '').substring(0, 10);
+        var ed = (ev.end_full || ev.end || '').substring(0, 10) || addDays(sd, 1);
+        if (!sd) continue;
+        for (var d = sd; d < ed; d = addDays(d, 1)) { if (byDate[d]) byDate[d].allDay.push(ev); }
+      } else {
+        var dk = (ev.date_time || ev.start_full || '').substring(0, 10);
+        if (!byDate[dk]) continue;
+        var sm = toMin(ev.start, ev.start_full || ev.date_time);
+        if (sm < 0) continue;
+        var endDay = (ev.end_full || '').substring(0, 10);
+        var em = endDay && endDay > dk ? 1440 : toMin(ev.end, ev.end_full);
+        if (em <= sm) em = sm + 60;
+        byDate[dk].timed.push({ ev: ev, sm: sm, em: em });
+      }
+    }
+    for (var k = 0; k < days.length; k++) days[k].timed.sort(function (a, b) { return a.sm - b.sm || a.em - b.em; });
+    return days;
+  }
+  var DAYS_SHOWN = 7, TOP_ROW = 3, OTHER_BAR = 5, WINDY_GUST_MPH = 25;
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var windSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>';
+  var sunSvg = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="#000" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+  var dropSvg = '<svg viewBox="0 0 24 24" fill="#555"><path d="M12 3c3 4 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-7 6-11z"/></svg>';
+
+  var container = document.getElementById("ag-container");
+  // Same fit as full.liquid: the X renderer resizes the window before the
+  // capture and zooms the framework wrappers, so the container lives on the
+  // body and fits again on each resize.
+  function fitToScreen() {
+    var DESIGN_W = 800;
+    var scr = document.querySelector('.screen');
+    var cls = scr ? scr.className : '';
+    if (container.parentNode !== document.body) document.body.appendChild(container);
+    container.style.width = '100px'; container.style.height = '100px'; container.style.transform = 'none';
+    var s = container.getBoundingClientRect().width / 100 || 1;
+    var vw = window.innerWidth || DESIGN_W;
+    var vh = window.innerHeight || 480;
+    if (/screen--lg/.test(cls)) vh = Math.round(vw * (/screen--portrait/.test(cls) ? 4 / 3 : 3 / 4));
+    document.documentElement.style.minHeight = vh + 'px'; document.body.style.minHeight = vh + 'px';
+    container.style.width = DESIGN_W + 'px'; container.style.height = Math.round(DESIGN_W * vh / vw) + 'px';
+    container.style.transform = 'scale(' + (vw / DESIGN_W / s) + ')';
+  }
+  fitToScreen();
+  window.addEventListener('resize', fitToScreen);
+
+  function esc(s) { var d = document.createElement("div"); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+  function parseSlot(literal) {
+    try { return deepParse(JSON.parse(sanitizeJson(literal))); } catch (e) { return null; }
+  }
+  function findDaily(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.daily) return raw;
+    for (var k in raw) { if (raw[k] && typeof raw[k] === 'object' && raw[k].daily) return raw[k]; }
+    return null;
+  }
+
+  // Same script-breakout guard as every injection point in full.liquid.
+  var calRaw = parseSlot(`{{ IDX_0 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var aqRaw = parseSlot(`{{ IDX_2 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var wx = findDaily(parseSlot(`{{ IDX_1 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`));
+
+  if (!hasCalData(calRaw)) {
+    container.innerHTML = '<div class="ag-wrap"><div class="ag-error"><b>No calendar data yet.</b><br>Check the polling URLs and token in the plugin settings.</div></div>';
+    return;
+  }
+  var cd = calRaw.data || calRaw;
+  var nowIso = cd.today_in_tz || '';
+  var todayIso = nowIso.substring(0, 10);
+  var nowMin = nowIso.length > 16 ? +nowIso.substring(11, 13) * 60 + +nowIso.substring(14, 16) : 0;
+  var events = (cd.events || []).filter(function (ev) { return !isIgnoredEvent(ev); });
+  // A fixed week, not a rolling one: the middleware sends events from the
+  // start of the week, and the today marker moves through the columns.
+  var days = agendaDays(events, weekStart(todayIso, cd.first_day), DAYS_SHOWN);
+  var todayIdx = -1; for (var di = 0; di < days.length; di++) if (days[di].date === todayIso) todayIdx = di;
+
+  var otherSeen = false;
+  function barFor(color) {
+    var p = personForColor(color);
+    if (p) return p.bar;
+    otherSeen = true; return OTHER_BAR;
+  }
+  function dayLabel(iso, i) {
+    var p = iso.split('-');
+    var name = DAY_NAMES[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
+    return name;
+  }
+  function weatherFor(iso) {
+    // Past days have no forecast; an empty row keeps the columns aligned.
+    var blank = '<div class="ag-wx"></div>';
+    if (!wx || !wx.daily || !wx.daily.time) return blank;
+    var i = wx.daily.time.indexOf(iso);
+    if (i < 0) return blank;
+    var dl = wx.daily, extra = '';
+    var pp = dl.precipitation_probability_max ? dl.precipitation_probability_max[i] : null;
+    if (pp != null && pp >= 20) extra += dropSvg + Math.round(pp) + '%';
+    var gust = dl.wind_gusts_10m_max ? dl.wind_gusts_10m_max[i] : null;
+    if (gust != null && gust >= WINDY_GUST_MPH) extra += windSvg + Math.round(gust);
+    return '<div class="ag-wx">' + wIcon(dl.weather_code[i]) +
+      '<span class="ag-temps">' + Math.round(dl.temperature_2m_min[i]) + '° / <b>' + Math.round(dl.temperature_2m_max[i]) + '°</b></span>' +
+      (extra ? '<span class="ag-wx-extra">' + extra + '</span>' : '') + '</div>';
+  }
+
+  function hhmm(iso) { return iso ? fmtClock(+iso.substring(11, 13) * 60 + +iso.substring(14, 16)).replace(':00', '') : ''; }
+  function weatherTile() {
+    var t = '<div class="ag-col ag-weather"><div class="ag-head"><span class="ag-day">Weather</span><span class="ag-date">Today</span></div>';
+    if (!wx || !wx.daily || !wx.daily.time) return t + '<div class="ag-empty">No weather data</div></div>';
+    var dl = wx.daily, i = Math.max(0, dl.time.indexOf(todayIso));
+    var cur = wx.current && wx.current.temperature_2m != null ? Math.round(wx.current.temperature_2m) : Math.round(dl.temperature_2m_max[i]);
+    t += '<div class="ag-now">' + wIcon(dl.weather_code[i]) + '<div><div class="ag-now-temp">' + cur + '°</div>' +
+      '<div class="ag-now-hilo">' + Math.round(dl.temperature_2m_min[i]) + '° / <b>' + Math.round(dl.temperature_2m_max[i]) + '°</b></div></div></div>';
+    var f = [];
+    if (dl.precipitation_probability_max) f.push('Rain <b>' + Math.round(dl.precipitation_probability_max[i]) + '%</b>');
+    if (dl.wind_speed_10m_max) f.push('Wind <b>' + Math.round(dl.wind_speed_10m_max[i]) + ' mph</b>' + (dl.wind_gusts_10m_max ? ', gusts ' + Math.round(dl.wind_gusts_10m_max[i]) : ''));
+    if (dl.sunrise && dl.sunset) f.push(sunSvg + ' ' + hhmm(dl.sunrise[i]) + ' → ' + hhmm(dl.sunset[i]));
+    var uv = dl.uv_index_max ? Math.round(dl.uv_index_max[i]) : null, aq = aqiNow();
+    if (uv != null || aq) f.push((uv != null ? 'UV <b>' + uv + '</b>' : '') + (uv != null && aq ? ' &nbsp; ' : '') + aq);
+    t += '<div class="ag-facts">' + f.join('<br>') + '</div>';
+    // The next four 3-hour marks after now: temperature, plus rain chance when likely.
+    var hr = wx.hourly, cells = '';
+    if (hr && hr.time) {
+      var n = 0;
+      for (var k = 0; k < hr.time.length && n < 4; k++) {
+        var ht = hr.time[k], hm = +ht.substring(11, 13) * 60;
+        if (ht.substring(0, 10) < todayIso || (ht.substring(0, 10) === todayIso && hm <= nowMin) || (hm / 60) % 3) continue;
+        var pp = hr.precipitation_probability ? hr.precipitation_probability[k] : null;
+        cells += '<div class="ag-hour">' + hhmm(ht).replace(' ', '').toLowerCase() + '<b>' + Math.round(hr.temperature_2m[k]) + '°</b>' + (pp >= 20 ? '<span>' + pp + '%</span>' : '') + '</div>';
+        n++;
+      }
+    }
+    if (cells) t += '<div class="ag-hours">' + cells + '</div>';
+    return t + '</div>';
+  }
+  function aqiNow() {
+    var a = aqRaw && aqRaw.current ? (aqRaw.current.us_aqi != null ? aqRaw.current.us_aqi : aqRaw.current.european_aqi) : null;
+    if (a == null || isNaN(+a)) return '';
+    var st = aqiShade(Math.round(+a));
+    return 'AQI <b' + (st ? ' style="color:' + st.color + (st.bold ? '' : ';font-weight:normal') + '"' : '') + '>' + Math.round(+a) + '</b>';
+  }
+
+  var h = '<div class="ag-wrap"><div class="ag-cols">';
+  for (var i = 0; i < days.length; i++) {
+    var day = days[i], p = day.date.split('-');
+    if (i === 0) h += '<div class="ag-row">';
+    if (i === TOP_ROW) h += weatherTile() + '</div><div class="ag-row">';
+    var pastDay = day.date < todayIso;
+    h += '<div class="ag-col' + (i === todayIdx ? ' is-today' : pastDay ? ' is-pastday' : '') + '">';
+    h += '<div class="ag-head"><span class="ag-day">' + dayLabel(day.date, i) + '</span><span class="ag-date">' + MONTHS[+p[1] - 1] + ' ' + (+p[2]) + '</span></div>';
+    h += weatherFor(day.date);
+    h += '<div class="ag-list">';
+    for (var a = 0; a < day.allDay.length; a++) {
+      var ad = day.allDay[a], ap = personForColor(ad.color);
+      if (ap && ap.invert) h += '<div class="ag-allday is-invert"><span>' + esc(ad.summary || 'No title') + '</span></div>';
+      else h += '<div class="ag-allday"><div class="ag-bar ag-bar-' + barFor(ad.color) + '"></div><span>' + esc(ad.summary || 'No title') + '</span></div>';
+    }
+    for (var t = 0; t < day.timed.length; t++) {
+      var e = day.timed[t], past = pastDay || (i === todayIdx && e.em <= nowMin);
+      h += '<div class="ag-evt' + (past ? ' is-past' : '') + '"><div class="ag-bar ag-bar-' + barFor(e.ev.color) + '"></div>' +
+        '<div class="ag-time"><div class="ag-start">' + fmtClock(e.sm) + '</div><div class="ag-end">to ' + fmtClock(e.em) + '</div></div>' +
+        '<div class="ag-body"><div class="ag-title">' + esc(e.ev.summary || 'No title') + '</div>' +
+        (e.ev.location ? '<div class="ag-loc">' + esc(String(e.ev.location).split(',')[0]) + '</div>' : '') + '</div></div>';
+    }
+    if (!day.allDay.length && !day.timed.length) h += '<div class="ag-empty">Nothing scheduled</div>';
+    h += '</div></div>';
+  }
+  h += '</div></div><div class="ag-legend">';
+  for (var l = 0; l < PERSON_ORDER.length; l++) {
+    var lp = null; for (var ck in PERSON_COLORS) { if (PERSON_COLORS[ck].name === PERSON_ORDER[l]) lp = PERSON_COLORS[ck]; }
+    if (!lp) continue;
+    var cn = ' <span class="ag-legend-color">(' + esc(lp.colorName) + ')</span>';
+    if (lp.invert) h += '<span class="ag-legend-item"><span class="ag-legend-inv">' + esc(lp.name) + '</span>' + cn + '</span>';
+    else h += '<span class="ag-legend-item"><span class="ag-legend-swatch ag-bar-' + lp.bar + '"></span>' + esc(lp.name) + cn + '</span>';
+  }
+  if (otherSeen) h += '<span class="ag-legend-item"><span class="ag-legend-swatch ag-bar-' + OTHER_BAR + '"></span>Other</span>';
+  h += '</div></div>';
+  container.innerHTML = h;
+
+  // A busy day can overflow its column: hide the rows that do not fit and say
+  // how many are hidden, so nothing is cut off mid-line.
+  var lists = container.querySelectorAll('.ag-list');
+  for (var li = 0; li < lists.length; li++) {
+    var list = lists[li], bottom = list.getBoundingClientRect().bottom, rows = list.children, hidden = 0;
+    for (var r = rows.length - 1; r >= 0; r--) {
+      if (rows[r].getBoundingClientRect().bottom <= bottom + 0.5) break;
+      rows[r].style.display = 'none'; hidden++;
+    }
+    if (hidden) {
+      var more = document.createElement('div'); more.className = 'ag-more'; more.textContent = '+ ' + hidden + ' more';
+      list.appendChild(more);
+      while (more.getBoundingClientRect().bottom > bottom + 0.5) {
+        var vis = [].filter.call(list.children, function (c) { return c !== more && c.style.display !== 'none'; });
+        if (!vis.length) break;
+        vis[vis.length - 1].style.display = 'none'; hidden++; more.textContent = '+ ' + hidden + ' more';
+      }
+    }
+  }
+});
+</script>

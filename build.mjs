@@ -67,6 +67,21 @@ function fullLiquidHelpers() {
   return [eventLayout, dateLabels, ignored, jsonRecovery, diagnosticSeverity, weatherIcon, aqiShade, timeFormat, eventColors].join('\n\n');
 }
 
+// Helpers inlined into `src/agenda.liquid` (the week agenda list view).
+function agendaHelpers() {
+  const eventLayout = readModule('src/lib/eventLayout.js');
+  const ignored = readModule('src/lib/ignoredEvents.js')
+    .replace('function isIgnoredEvent(', 'function isIgnoredEventPure(') +
+    '\n\n' +
+    'function isIgnoredEvent(ev) { return isIgnoredEventPure(ev, IGNORED_PHRASES); }';
+  const jsonRecovery = readModule('src/lib/jsonRecovery.js');
+  const weatherIcon = readModule('src/lib/weatherIcon.js');
+  const eventColors = readModule('src/lib/eventColors.js');
+  const aqiShade = readModule('src/lib/aqiShade.js');
+  const agenda = readModule('src/lib/agenda.js');
+  return [eventLayout, ignored, jsonRecovery, weatherIcon, aqiShade, eventColors, agenda].join('\n\n');
+}
+
 // Helpers inlined into the Apps Script middleware `.gs`.
 function gsHelpers() {
   return readModule('src/lib/middleware.js')
@@ -104,6 +119,12 @@ const TARGETS = [
     out: 'src/full.liquid',
     helpers: fullLiquidHelpers(),
     banner: '{% comment %} GENERATED FILE - do not edit directly. Edit src/lib/*.js and src/full.liquid.template, then run `bun run build`. {% endcomment %}',
+  },
+  {
+    template: 'src/agenda.liquid.template',
+    out: 'src/agenda.liquid',
+    helpers: agendaHelpers(),
+    banner: '{% comment %} GENERATED FILE - do not edit directly. Edit src/lib/*.js and src/agenda.liquid.template, then run `bun run build`. {% endcomment %}',
   },
   {
     template: 'src/middleware/calendar_weather_proxy.gs.template',

@@ -1,0 +1,278 @@
+{% comment %}
+  Week Agenda - TRMNL private plugin (full view).
+  A companion to full.liquid for the same playlist: the current week
+  (Sunday to Saturday, or from the configured first day) as an easy-to-read
+  list in a 4 x 2 grid: three days and today's weather on the top row, four
+  days on the bottom row, with each event's time beside its title. The
+  today marker moves through the week; earlier days are grayed out. It reads the same three polling URLs as full.liquid:
+    IDX_0 = ?src=cal, IDX_1 = ?src=weather, IDX_2 = ?src=aqi (unused here).
+  Design size is 800 x 480; fitToScreen() scales it to the device.
+{% endcomment %}
+
+<style>
+  * { box-sizing: border-box; }
+  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; }
+  /* Sized by fitToScreen() in the script; see full.liquid.template for why. */
+  #ag-container { position: fixed; left: 0; top: 0; transform-origin: 0 0; background: #fff; z-index: 1; }
+  .ag-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: none; color: #000; }
+  .ag-cols { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .ag-row { flex: 1; display: flex; min-height: 0; }
+  .ag-row + .ag-row { border-top: 2px solid #000; }
+  .ag-col { flex: 1; display: flex; flex-direction: column; min-width: 0; border-left: 2px solid #000; }
+  .ag-col:first-child { border-left: none; }
+
+  .ag-head { background: #000; color: #fff; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 2px 6px 1px; white-space: nowrap; }
+  /* Past days: light gray header. Today: black header and a thick outline. Later days: dark gray. */
+  .ag-head { background: #555; }
+  .ag-col.is-today { box-shadow: inset 0 0 0 3px #000; }
+  .ag-col.is-today .ag-head { background: #000; }
+  .ag-weather .ag-head { background: #000; }
+  .ag-col.is-pastday .ag-head { background: #AAA; }
+  .ag-col.is-pastday .ag-allday { color: #AAA; border-color: #AAA; }
+  .ag-col.is-pastday .ag-allday.is-invert { background: #AAA; color: #fff; }
+  .ag-day { font-size: 15px; font-weight: bold; }
+  .ag-date { font-size: 12px; font-weight: bold; }
+
+  .ag-wx { display: flex; align-items: center; gap: 5px; padding: 1px 6px; border-bottom: 1px solid #000; height: 24px; }
+  .ag-wx svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .ag-temps { font-size: 13px; }
+  .ag-temps b { font-weight: bold; }
+  .ag-wx-extra { margin-left: auto; font-size: 11px; color: #555; display: flex; align-items: center; gap: 2px; }
+  .ag-wx-extra svg { width: 13px; height: 13px; }
+
+  .ag-list { flex: 1; min-height: 0; overflow: hidden; padding: 3px 5px 0; display: flex; flex-direction: column; gap: 3px; }
+  .ag-allday { display: flex; align-items: stretch; font-size: 12px; font-weight: bold; border: 1px solid #000; min-height: 17px; flex-shrink: 0; }
+  .ag-allday .ag-bar { width: 5px; }
+  .ag-allday span { padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag-allday.is-invert { background: #000; color: #fff; }
+
+  .ag-evt { display: flex; align-items: stretch; gap: 5px; padding: 2px 0 3px; border-bottom: 1px dashed #AAA; flex-shrink: 0; }
+  .ag-evt .ag-bar { width: 5px; flex-shrink: 0; }
+  .ag-time { width: 58px; flex-shrink: 0; line-height: 1.15; }
+  .ag-start { font-size: 12px; font-weight: bold; white-space: nowrap; }
+  .ag-end { font-size: 10px; color: #555; white-space: nowrap; }
+  .ag-body { flex: 1; min-width: 0; line-height: 1.15; }
+  .ag-title { font-size: 13px; font-weight: bold; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .ag-loc { font-size: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag-evt.is-past .ag-start, .ag-evt.is-past .ag-title { color: #AAA; }
+  .ag-evt.is-past .ag-end, .ag-evt.is-past .ag-loc { color: #AAA; }
+  .ag-empty { font-size: 12px; color: #AAA; padding: 6px 2px; }
+  .ag-more { font-size: 12px; font-weight: bold; color: #555; padding: 2px 2px 4px; }
+
+  .ag-legend { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-top: 2px solid #000; font-size: 11px; white-space: nowrap; overflow: hidden; }
+  .ag-legend-item { display: flex; align-items: center; gap: 4px; }
+  .ag-legend-swatch { width: 7px; height: 12px; }
+  .ag-legend-color { color: #555; }
+  .ag-legend-inv { background: #000; color: #fff; font-weight: bold; padding: 0 3px; }
+
+  .ag-bar-0 { background: #AAA; }
+  .ag-bar-1 { background: #000; }
+  .ag-bar-2 { background: #fff; border: 1px solid #000; }
+  .ag-bar-4 { background: repeating-linear-gradient(-45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .ag-bar-5 { background: repeating-linear-gradient(0deg, #AAA 0px, #AAA 2px, #fff 2px, #fff 4px); }
+  .ag-bar-7 { background: repeating-linear-gradient(0deg, #000 0px, #000 2px, #fff 2px, #fff 4px); }
+  .ag-bar-10 { background: repeating-linear-gradient(45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+
+  .ag-error { padding: 20px; font-size: 16px; }
+
+  /* Today's weather tile (top right). */
+  .ag-now { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; }
+  .ag-now svg { width: 52px; height: 52px; flex-shrink: 0; }
+  .ag-now-temp { font-size: 40px; font-weight: bold; line-height: 1; }
+  .ag-now-hilo { font-size: 13px; color: #555; }
+  .ag-now-hilo b { color: #000; }
+  .ag-facts { padding: 2px 8px; font-size: 12px; line-height: 1.45; }
+  .ag-facts b { font-weight: bold; }
+  .ag-hours { display: flex; margin: 4px 6px 0; border-top: 1px solid #000; padding-top: 3px; }
+  .ag-hour { flex: 1; text-align: center; font-size: 11px; line-height: 1.3; }
+  .ag-hour b { font-size: 13px; display: block; }
+  .ag-hour span { color: #555; }
+</style>
+
+<div id="ag-container"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var IGNORED_PHRASES = compileIgnoredPhrases(String.raw`{{ trmnl.plugin_settings.custom_fields_values.ignored_phrases }}`);
+  // @generated:helpers
+  var DAYS_SHOWN = 7, TOP_ROW = 3, OTHER_BAR = 5, WINDY_GUST_MPH = 25;
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var windSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>';
+  var sunSvg = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="#000" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+  var dropSvg = '<svg viewBox="0 0 24 24" fill="#555"><path d="M12 3c3 4 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-7 6-11z"/></svg>';
+
+  var container = document.getElementById("ag-container");
+  // Same fit as full.liquid: the X renderer resizes the window before the
+  // capture and zooms the framework wrappers, so the container lives on the
+  // body and fits again on each resize.
+  function fitToScreen() {
+    var DESIGN_W = 800;
+    var scr = document.querySelector('.screen');
+    var cls = scr ? scr.className : '';
+    if (container.parentNode !== document.body) document.body.appendChild(container);
+    container.style.width = '100px'; container.style.height = '100px'; container.style.transform = 'none';
+    var s = container.getBoundingClientRect().width / 100 || 1;
+    var vw = window.innerWidth || DESIGN_W;
+    var vh = window.innerHeight || 480;
+    if (/screen--lg/.test(cls)) vh = Math.round(vw * (/screen--portrait/.test(cls) ? 4 / 3 : 3 / 4));
+    document.documentElement.style.minHeight = vh + 'px'; document.body.style.minHeight = vh + 'px';
+    container.style.width = DESIGN_W + 'px'; container.style.height = Math.round(DESIGN_W * vh / vw) + 'px';
+    container.style.transform = 'scale(' + (vw / DESIGN_W / s) + ')';
+  }
+  fitToScreen();
+  window.addEventListener('resize', fitToScreen);
+
+  function esc(s) { var d = document.createElement("div"); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+  function parseSlot(literal) {
+    try { return deepParse(JSON.parse(sanitizeJson(literal))); } catch (e) { return null; }
+  }
+  function findDaily(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.daily) return raw;
+    for (var k in raw) { if (raw[k] && typeof raw[k] === 'object' && raw[k].daily) return raw[k]; }
+    return null;
+  }
+
+  // Same script-breakout guard as every injection point in full.liquid.
+  var calRaw = parseSlot(`{{ IDX_0 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var aqRaw = parseSlot(`{{ IDX_2 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var wx = findDaily(parseSlot(`{{ IDX_1 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`));
+
+  if (!hasCalData(calRaw)) {
+    container.innerHTML = '<div class="ag-wrap"><div class="ag-error"><b>No calendar data yet.</b><br>Check the polling URLs and token in the plugin settings.</div></div>';
+    return;
+  }
+  var cd = calRaw.data || calRaw;
+  var nowIso = cd.today_in_tz || '';
+  var todayIso = nowIso.substring(0, 10);
+  var nowMin = nowIso.length > 16 ? +nowIso.substring(11, 13) * 60 + +nowIso.substring(14, 16) : 0;
+  var events = (cd.events || []).filter(function (ev) { return !isIgnoredEvent(ev); });
+  // A fixed week, not a rolling one: the middleware sends events from the
+  // start of the week, and the today marker moves through the columns.
+  var days = agendaDays(events, weekStart(todayIso, cd.first_day), DAYS_SHOWN);
+  var todayIdx = -1; for (var di = 0; di < days.length; di++) if (days[di].date === todayIso) todayIdx = di;
+
+  var otherSeen = false;
+  function barFor(color) {
+    var p = personForColor(color);
+    if (p) return p.bar;
+    otherSeen = true; return OTHER_BAR;
+  }
+  function dayLabel(iso, i) {
+    var p = iso.split('-');
+    var name = DAY_NAMES[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
+    return name;
+  }
+  function weatherFor(iso) {
+    // Past days have no forecast; an empty row keeps the columns aligned.
+    var blank = '<div class="ag-wx"></div>';
+    if (!wx || !wx.daily || !wx.daily.time) return blank;
+    var i = wx.daily.time.indexOf(iso);
+    if (i < 0) return blank;
+    var dl = wx.daily, extra = '';
+    var pp = dl.precipitation_probability_max ? dl.precipitation_probability_max[i] : null;
+    if (pp != null && pp >= 20) extra += dropSvg + Math.round(pp) + '%';
+    var gust = dl.wind_gusts_10m_max ? dl.wind_gusts_10m_max[i] : null;
+    if (gust != null && gust >= WINDY_GUST_MPH) extra += windSvg + Math.round(gust);
+    return '<div class="ag-wx">' + wIcon(dl.weather_code[i]) +
+      '<span class="ag-temps">' + Math.round(dl.temperature_2m_min[i]) + '° / <b>' + Math.round(dl.temperature_2m_max[i]) + '°</b></span>' +
+      (extra ? '<span class="ag-wx-extra">' + extra + '</span>' : '') + '</div>';
+  }
+
+  function hhmm(iso) { return iso ? fmtClock(+iso.substring(11, 13) * 60 + +iso.substring(14, 16)).replace(':00', '') : ''; }
+  function weatherTile() {
+    var t = '<div class="ag-col ag-weather"><div class="ag-head"><span class="ag-day">Weather</span><span class="ag-date">Today</span></div>';
+    if (!wx || !wx.daily || !wx.daily.time) return t + '<div class="ag-empty">No weather data</div></div>';
+    var dl = wx.daily, i = Math.max(0, dl.time.indexOf(todayIso));
+    var cur = wx.current && wx.current.temperature_2m != null ? Math.round(wx.current.temperature_2m) : Math.round(dl.temperature_2m_max[i]);
+    t += '<div class="ag-now">' + wIcon(dl.weather_code[i]) + '<div><div class="ag-now-temp">' + cur + '°</div>' +
+      '<div class="ag-now-hilo">' + Math.round(dl.temperature_2m_min[i]) + '° / <b>' + Math.round(dl.temperature_2m_max[i]) + '°</b></div></div></div>';
+    var f = [];
+    if (dl.precipitation_probability_max) f.push('Rain <b>' + Math.round(dl.precipitation_probability_max[i]) + '%</b>');
+    if (dl.wind_speed_10m_max) f.push('Wind <b>' + Math.round(dl.wind_speed_10m_max[i]) + ' mph</b>' + (dl.wind_gusts_10m_max ? ', gusts ' + Math.round(dl.wind_gusts_10m_max[i]) : ''));
+    if (dl.sunrise && dl.sunset) f.push(sunSvg + ' ' + hhmm(dl.sunrise[i]) + ' → ' + hhmm(dl.sunset[i]));
+    var uv = dl.uv_index_max ? Math.round(dl.uv_index_max[i]) : null, aq = aqiNow();
+    if (uv != null || aq) f.push((uv != null ? 'UV <b>' + uv + '</b>' : '') + (uv != null && aq ? ' &nbsp; ' : '') + aq);
+    t += '<div class="ag-facts">' + f.join('<br>') + '</div>';
+    // The next four 3-hour marks after now: temperature, plus rain chance when likely.
+    var hr = wx.hourly, cells = '';
+    if (hr && hr.time) {
+      var n = 0;
+      for (var k = 0; k < hr.time.length && n < 4; k++) {
+        var ht = hr.time[k], hm = +ht.substring(11, 13) * 60;
+        if (ht.substring(0, 10) < todayIso || (ht.substring(0, 10) === todayIso && hm <= nowMin) || (hm / 60) % 3) continue;
+        var pp = hr.precipitation_probability ? hr.precipitation_probability[k] : null;
+        cells += '<div class="ag-hour">' + hhmm(ht).replace(' ', '').toLowerCase() + '<b>' + Math.round(hr.temperature_2m[k]) + '°</b>' + (pp >= 20 ? '<span>' + pp + '%</span>' : '') + '</div>';
+        n++;
+      }
+    }
+    if (cells) t += '<div class="ag-hours">' + cells + '</div>';
+    return t + '</div>';
+  }
+  function aqiNow() {
+    var a = aqRaw && aqRaw.current ? (aqRaw.current.us_aqi != null ? aqRaw.current.us_aqi : aqRaw.current.european_aqi) : null;
+    if (a == null || isNaN(+a)) return '';
+    var st = aqiShade(Math.round(+a));
+    return 'AQI <b' + (st ? ' style="color:' + st.color + (st.bold ? '' : ';font-weight:normal') + '"' : '') + '>' + Math.round(+a) + '</b>';
+  }
+
+  var h = '<div class="ag-wrap"><div class="ag-cols">';
+  for (var i = 0; i < days.length; i++) {
+    var day = days[i], p = day.date.split('-');
+    if (i === 0) h += '<div class="ag-row">';
+    if (i === TOP_ROW) h += weatherTile() + '</div><div class="ag-row">';
+    var pastDay = day.date < todayIso;
+    h += '<div class="ag-col' + (i === todayIdx ? ' is-today' : pastDay ? ' is-pastday' : '') + '">';
+    h += '<div class="ag-head"><span class="ag-day">' + dayLabel(day.date, i) + '</span><span class="ag-date">' + MONTHS[+p[1] - 1] + ' ' + (+p[2]) + '</span></div>';
+    h += weatherFor(day.date);
+    h += '<div class="ag-list">';
+    for (var a = 0; a < day.allDay.length; a++) {
+      var ad = day.allDay[a], ap = personForColor(ad.color);
+      if (ap && ap.invert) h += '<div class="ag-allday is-invert"><span>' + esc(ad.summary || 'No title') + '</span></div>';
+      else h += '<div class="ag-allday"><div class="ag-bar ag-bar-' + barFor(ad.color) + '"></div><span>' + esc(ad.summary || 'No title') + '</span></div>';
+    }
+    for (var t = 0; t < day.timed.length; t++) {
+      var e = day.timed[t], past = pastDay || (i === todayIdx && e.em <= nowMin);
+      h += '<div class="ag-evt' + (past ? ' is-past' : '') + '"><div class="ag-bar ag-bar-' + barFor(e.ev.color) + '"></div>' +
+        '<div class="ag-time"><div class="ag-start">' + fmtClock(e.sm) + '</div><div class="ag-end">to ' + fmtClock(e.em) + '</div></div>' +
+        '<div class="ag-body"><div class="ag-title">' + esc(e.ev.summary || 'No title') + '</div>' +
+        (e.ev.location ? '<div class="ag-loc">' + esc(String(e.ev.location).split(',')[0]) + '</div>' : '') + '</div></div>';
+    }
+    if (!day.allDay.length && !day.timed.length) h += '<div class="ag-empty">Nothing scheduled</div>';
+    h += '</div></div>';
+  }
+  h += '</div></div><div class="ag-legend">';
+  for (var l = 0; l < PERSON_ORDER.length; l++) {
+    var lp = null; for (var ck in PERSON_COLORS) { if (PERSON_COLORS[ck].name === PERSON_ORDER[l]) lp = PERSON_COLORS[ck]; }
+    if (!lp) continue;
+    var cn = ' <span class="ag-legend-color">(' + esc(lp.colorName) + ')</span>';
+    if (lp.invert) h += '<span class="ag-legend-item"><span class="ag-legend-inv">' + esc(lp.name) + '</span>' + cn + '</span>';
+    else h += '<span class="ag-legend-item"><span class="ag-legend-swatch ag-bar-' + lp.bar + '"></span>' + esc(lp.name) + cn + '</span>';
+  }
+  if (otherSeen) h += '<span class="ag-legend-item"><span class="ag-legend-swatch ag-bar-' + OTHER_BAR + '"></span>Other</span>';
+  h += '</div></div>';
+  container.innerHTML = h;
+
+  // A busy day can overflow its column: hide the rows that do not fit and say
+  // how many are hidden, so nothing is cut off mid-line.
+  var lists = container.querySelectorAll('.ag-list');
+  for (var li = 0; li < lists.length; li++) {
+    var list = lists[li], bottom = list.getBoundingClientRect().bottom, rows = list.children, hidden = 0;
+    for (var r = rows.length - 1; r >= 0; r--) {
+      if (rows[r].getBoundingClientRect().bottom <= bottom + 0.5) break;
+      rows[r].style.display = 'none'; hidden++;
+    }
+    if (hidden) {
+      var more = document.createElement('div'); more.className = 'ag-more'; more.textContent = '+ ' + hidden + ' more';
+      list.appendChild(more);
+      while (more.getBoundingClientRect().bottom > bottom + 0.5) {
+        var vis = [].filter.call(list.children, function (c) { return c !== more && c.style.display !== 'none'; });
+        if (!vis.length) break;
+        vis[vis.length - 1].style.display = 'none'; hidden++; more.textContent = '+ ' + hidden + ' more';
+      }
+    }
+  }
+});
+</script>
