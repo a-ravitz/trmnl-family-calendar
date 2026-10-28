@@ -58,6 +58,9 @@
   .mo-item.is-invert { background: #000; color: #fff; border-color: #000; }
   .mo-item.is-past { color: #AAA; border-color: #AAA; }
   .mo-item.is-invert.is-past { background: #AAA; color: #fff; }
+  /* Wrapped mode: long names use up to three lines when the day has room. */
+  .mo-list.is-wrap .mo-item { white-space: normal; }
+  .mo-list.is-wrap .mo-item span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
   .mo-more { font-size: 10px; font-weight: bold; color: #555; line-height: 12px; }
   .mo-stripe { width: 4px; flex-shrink: 0; }
 
@@ -637,8 +640,9 @@ document.addEventListener("DOMContentLoaded", function() {
   h += '</div></div>';
   container.innerHTML = h;
 
-  // A busy day can overflow its cell: hide the items that do not fit and say
-  // how many are hidden, so nothing is cut off mid-line.
+  // Each day first tries wrapped names (up to three lines). If they do not all
+  // fit, the day goes back to one line per event, then hides the items that
+  // still do not fit and says how many are hidden, so nothing is cut off.
   function fitLists() {
     var lists = container.querySelectorAll('.mo-list');
     for (var li = 0; li < lists.length; li++) {
@@ -647,6 +651,8 @@ document.addEventListener("DOMContentLoaded", function() {
       var kids = [].slice.call(list.children);
       for (var k = 0; k < kids.length; k++) kids[k].style.display = '';
       var bottom = list.getBoundingClientRect().bottom, hidden = 0;
+      list.classList.add('is-wrap');
+      if (kids.length && kids[kids.length - 1].getBoundingClientRect().bottom > bottom + 0.5) list.classList.remove('is-wrap');
       for (var r = kids.length - 1; r >= 0; r--) {
         if (kids[r].getBoundingClientRect().bottom <= bottom + 0.5) break;
         kids[r].style.display = 'none'; hidden++;
