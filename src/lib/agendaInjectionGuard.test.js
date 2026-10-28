@@ -13,8 +13,8 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 const FULL = read('src/full.liquid.template');
 const CHAIN = FULL.match(/\{\{ IDX_0 \| json (\|[^}]*)\}\}/)[1];
 
-describe('agenda template injection guard', () => {
-  for (const file of ['src/agenda.liquid.template', 'src/agenda.liquid']) {
+describe('agenda and month template injection guard', () => {
+  for (const file of ['src/agenda.liquid.template', 'src/agenda.liquid', 'src/month.liquid.template', 'src/month.liquid']) {
     const src = read(file);
     const injections = [...src.matchAll(/\{\{ (IDX_\d) \| json (\|[^}]*)\}\}/g)];
 

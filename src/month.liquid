@@ -1,0 +1,667 @@
+{% comment %} GENERATED FILE - do not edit directly. Edit src/lib/*.js and src/month.liquid.template, then run `bun run build`. {% endcomment %}
+{% comment %}
+  Month at a Glance - TRMNL private plugin (full view).
+  A third view for the same playlist: today's date and weather on top, then
+  five weeks (this week and the next four) as a month grid. Multi-day events
+  span their days as one bar; other events list under each day number with a
+  short start time. Earlier days are grayed out and today has a black badge.
+  It reads the same three polling URLs as full.liquid:
+    IDX_0 = ?src=cal, IDX_1 = ?src=weather, IDX_2 = ?src=aqi (unused here).
+  Needs the five-week calendar window (CONFIG.daysAhead 35 in the middleware).
+  Design width is 800; fitToScreen() scales it to the device.
+{% endcomment %}
+
+<style>
+  * { box-sizing: border-box; }
+  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; }
+  /* Sized by fitToScreen() in the script; see full.liquid.template for why. */
+  #mo-container { position: fixed; left: 0; top: 0; transform-origin: 0 0; background: #fff; z-index: 1; }
+  .mo-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: none; color: #000; }
+
+  .mo-top { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 6px; flex-shrink: 0; }
+  .mo-date { font-size: 27px; font-weight: bold; line-height: 1.05; }
+  .mo-sub { font-size: 13px; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 470px; }
+  .mo-wx { display: flex; align-items: center; gap: 8px; }
+  .mo-wx svg { width: 38px; height: 38px; }
+  .mo-temp { font-size: 34px; font-weight: bold; line-height: 1; }
+  .mo-wx-text { font-size: 13px; line-height: 1.3; }
+  .mo-wx-text span { color: #555; }
+
+  .mo-dow { display: flex; flex-shrink: 0; background: #555; color: #fff; }
+  .mo-dow div { flex: 1; text-align: center; font-size: 13px; font-weight: bold; padding: 2px 0; }
+
+  .mo-weeks { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .mo-week { flex: 1; position: relative; display: flex; min-height: 0; border-bottom: 1px solid #AAA; }
+  .mo-week:last-child { border-bottom: none; }
+  .mo-day { flex: 1; position: relative; border-left: 1px solid #AAA; min-width: 0; overflow: hidden; }
+  .mo-day:first-child { border-left: none; }
+  .mo-num { position: absolute; top: 2px; right: 4px; font-size: 15px; font-weight: bold; line-height: 18px; }
+  .mo-num small { font-size: 11px; margin-right: 2px; }
+  .mo-day.is-today .mo-num { background: #000; color: #fff; border-radius: 3px; padding: 0 5px; }
+  .mo-day.is-past .mo-num { color: #AAA; }
+
+  .mo-bar { position: absolute; height: 15px; display: flex; align-items: stretch; font-size: 11px; font-weight: bold;
+    background: #fff; border: 1px solid #555; border-radius: 3px; overflow: hidden; white-space: nowrap; z-index: 2; }
+  .mo-bar.contL { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .mo-bar.contR { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .mo-bar span { padding: 0 4px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .mo-bar.is-invert { background: #000; color: #fff; border-color: #000; }
+  .mo-bar.is-past { color: #AAA; border-color: #AAA; }
+  .mo-bar.is-invert.is-past { background: #AAA; color: #fff; }
+
+  .mo-list { position: absolute; left: 3px; right: 3px; bottom: 1px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+  .mo-item { display: flex; align-items: stretch; font-size: 11px; line-height: 13px; white-space: nowrap; flex-shrink: 0; }
+  .mo-item span { overflow: hidden; text-overflow: ellipsis; padding-left: 3px; }
+  .mo-item b { font-weight: bold; margin-right: 3px; }
+  .mo-item.is-allday { border: 1px solid #555; border-radius: 3px; font-weight: bold; }
+  .mo-item.is-invert { background: #000; color: #fff; border-color: #000; }
+  .mo-item.is-past { color: #AAA; border-color: #AAA; }
+  .mo-item.is-invert.is-past { background: #AAA; color: #fff; }
+  .mo-more { font-size: 10px; font-weight: bold; color: #555; line-height: 12px; }
+  .mo-stripe { width: 4px; flex-shrink: 0; }
+
+  .mo-bar-0 { background: #AAA; }
+  .mo-bar-1 { background: #000; }
+  .mo-bar-2 { background: #fff; border-right: 1px solid #000; }
+  .mo-bar-4 { background: repeating-linear-gradient(-45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .mo-bar-5 { background: repeating-linear-gradient(0deg, #AAA 0px, #AAA 2px, #fff 2px, #fff 4px); }
+  .mo-bar-7 { background: repeating-linear-gradient(0deg, #000 0px, #000 2px, #fff 2px, #fff 4px); }
+  .mo-bar-10 { background: repeating-linear-gradient(45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .is-past .mo-stripe { opacity: 0.4; }
+
+  .mo-error { padding: 20px; font-size: 16px; }
+</style>
+
+<div id="mo-container"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var IGNORED_PHRASES = compileIgnoredPhrases(String.raw`{{ trmnl.plugin_settings.custom_fields_values.ignored_phrases }}`);
+  /**
+   * Parse an event start time to minutes-since-midnight. Prefers the `start_full`
+   * ISO timestamp; falls back to a bare `HH:MM` or AM/PM `start` field. Returns
+   * -1 when there is no usable time (all-day events).
+   * @param {string} startField - AM/PM or HH:MM string, e.g. "9:00 AM" or "09:00"
+   * @param {string} fullField - ISO timestamp, e.g. "2026-04-09T08:55:00.000+02:00"
+   * @returns {number} minutes since midnight, or -1
+   */
+  function toMin(startField, fullField) {
+    // Prefer start_full ISO timestamp
+    if (fullField && fullField.length > 16) {
+      var tp = fullField.substring(11, 16).split(":");
+      return +tp[0] * 60 + +tp[1];
+    }
+    if (!startField) return -1;
+    // Handle AM/PM format
+    var s = startField.trim().toUpperCase();
+    var pm = s.indexOf("PM") > -1, am = s.indexOf("AM") > -1;
+    s = s.replace(/[AP]M/gi, "").trim();
+    var p = s.split(":");
+    var h = +p[0], m = +p[1] || 0;
+    if (pm && h < 12) h += 12;
+    if (am && h === 12) h = 0;
+    return h * 60 + m;
+  }
+
+  /**
+   * Pack overlapping events into side-by-side columns. Mutates `evts` in place:
+   * sorts it, and sets `.col` (column index) and `.totalCols` (columns in the
+   * event's overlap cluster) on each element. Each element must have `.sm`
+   * (start minute) and `.em` (end minute).
+   * @param {Array<{sm:number, em:number, col?:number, totalCols?:number}>} evts
+   * @returns {void}
+   */
+  function layoutOverlaps(evts) {
+    evts.sort(function(a,b){return a.sm-b.sm||(b.em-b.sm)-(a.em-a.sm);});
+    var clusters=[];
+    for(var i=0;i<evts.length;i++){
+      var e=evts[i],placed=false;
+      for(var ci=0;ci<clusters.length;ci++){
+        if(e.sm<clusters[ci].end){clusters[ci].events.push(e);if(e.em>clusters[ci].end)clusters[ci].end=e.em;placed=true;break;}
+      }
+      if(!placed) clusters.push({end:e.em,events:[e]});
+    }
+    for(var ci=0;ci<clusters.length;ci++){
+      var ce=clusters[ci].events,cols=[];
+      for(var i=0;i<ce.length;i++){
+        var p=false;
+        for(var c=0;c<cols.length;c++){if(ce[i].sm>=cols[c]){cols[c]=ce[i].em;ce[i].col=c;p=true;break;}}
+        if(!p){ce[i].col=cols.length;cols.push(ce[i].em);}
+      }
+      for(var i=0;i<ce.length;i++) ce[i].totalCols=cols.length;
+    }
+  }
+
+  /**
+   * Compile a comma-separated "Ignored phrases" string into case-insensitive
+   * regular expressions. An invalid regex is escaped and matched as literal text.
+   * Empty entries are dropped.
+   * @param {string} raw - comma-separated patterns, e.g. "^Work$, Focus Time"
+   * @returns {RegExp[]} one RegExp per non-empty pattern
+   */
+  function compileIgnoredPhrases(raw) {
+    return String(raw)
+      .split(',')
+      .map(function(s){ return s.trim(); })
+      .filter(function(s){ return s.length > 0; })
+      .map(function(p){
+        try { return new RegExp(p, 'i'); }
+        catch(e) { return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); }
+      });
+  }
+
+  /**
+   * Return true when the event's title or description matches any ignored phrase.
+   * @param {{summary?:string, description?:string}} ev - the calendar event
+   * @param {RegExp[]} ignoredPhrases - compiled by compileIgnoredPhrases
+   * @returns {boolean}
+   */
+  function isIgnoredEventPure(ev, ignoredPhrases) {
+    for (var i = 0; i < ignoredPhrases.length; i++) {
+      if (ignoredPhrases[i].test(ev.summary || '') || ignoredPhrases[i].test(ev.description || '')) return true;
+    }
+    return false;
+  }
+
+  function isIgnoredEvent(ev) { return isIgnoredEventPure(ev, IGNORED_PHRASES); }
+
+  /**
+   * Escape the control characters that break JSON.parse (literal newlines/tabs
+   * in event descriptions or locations); drop other control characters.
+   * @param {string} s
+   * @returns {string}
+   */
+  function sanitizeJson(s) {
+    return s.replace(/[\x00-\x1f\x7f]/g, function(c) {
+      switch(c) {
+        case '\n': return '\\n';
+        case '\r': return '\\r';
+        case '\t': return '\\t';
+        default: return '';
+      }
+    });
+  }
+
+  /**
+   * Parse a Liquid-encoded JSON string: trmnlp's `json` filter emits Ruby hash
+   * syntax (` => ` instead of `: `), so convert it before parsing.
+   * @param {string} str
+   * @returns {*} the parsed value
+   */
+  function parseLiquid(str) { return JSON.parse(sanitizeJson(str.replace(/ => /g, ': '))); }
+
+  /**
+   * True when the object holds calendar events at `data.events` or `events`.
+   * @param {*} obj
+   * @returns {boolean}
+   */
+  function hasCalData(obj) { return obj && typeof obj === 'object' && ((obj.data && obj.data.events) || obj.events); }
+
+  /**
+   * True when TRMNL stored nothing usable for a polling slot. TRMNL keeps an
+   * empty array for a URL whose response it could not parse as JSON, and the
+   * middleware always answers with an object, so `[]` means the poll failed
+   * rather than that the data has an unexpected shape.
+   * @param {*} raw
+   * @returns {boolean}
+   */
+  function isFailedPollingSlot(raw) { return Array.isArray(raw) && raw.length === 0; }
+
+  /**
+   * True when TRMNL stored an object with no keys (`{}`) for a polling slot. The
+   * middleware always answers with a populated object (the upstream payload, or
+   * an `error` field), so `{}` means the poll did not deliver data on that cycle
+   * rather than that the middleware sent a wrong shape.
+   * @param {*} raw
+   * @returns {boolean}
+   */
+  function isEmptyPollingSlot(raw) { return !!raw && typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0; }
+
+  /**
+   * Recover the calendar payload from raw data that may be double- or
+   * triple-encoded JSON (a string inside a string) and may wrap the events one
+   * level deep. Returns the object that holds the events, or null when the raw
+   * value cannot be parsed into an object at all.
+   * @param {*} raw
+   * @returns {object|null}
+   */
+  function deepParse(raw) {
+    if (raw == null) return null;
+    // If first parse returned a string, try parsing it again (double-encoded JSON)
+    if (typeof raw === 'string') { try { raw = JSON.parse(sanitizeJson(raw)); } catch(e) { return null; } }
+    if (typeof raw === 'string') { try { raw = JSON.parse(sanitizeJson(raw)); } catch(e) { return null; } } // triple-encoded edge case
+    if (typeof raw !== 'object' || raw === null) return null;
+    // If data is at expected path, return as-is
+    if (hasCalData(raw)) return raw;
+    // Search one level deeper for a wrapper (e.g., { "plugin_setting": { "data": { "events": [...] } } })
+    var keys = Object.keys(raw);
+    for (var i = 0; i < keys.length; i++) {
+      var child = raw[keys[i]];
+      if (child && typeof child === 'object' && hasCalData(child)) return child;
+    }
+    return raw; // return whatever we have; diagnostics will flag it if still bad
+  }
+
+  /**
+   * Map a WMO weather code to an inline SVG icon string.
+   * @param {number|string} c - WMO weather code
+   * @returns {string} an SVG markup string
+   */
+  function wIcon(c){c=+c||0;
+    // Clear/sunny: white-filled sun circle + rays
+    if(c<=1)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" fill="#fff"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="5" y1="5" x2="7" y2="7"/><line x1="17" y1="17" x2="19" y2="19"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="5" y1="19" x2="7" y2="17"/><line x1="17" y1="7" x2="19" y2="5"/></svg>';
+    // Cloudy/overcast: white-filled cloud
+    if(c<=3)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/></svg>';
+    // Fog: horizontal lines (no fill needed)
+    if(c>=45&&c<=48)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="5" y1="10" x2="19" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="5" y1="18" x2="19" y2="18"/></svg>';
+    // Drizzle/light showers: white-filled cloud + drops
+    if((c>=51&&c<=57)||c===80)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><line x1="8" y1="19" x2="7.5" y2="21"/><line x1="13" y1="19" x2="12.5" y2="21"/></svg>';
+    // Rain/heavy showers: white-filled cloud + drops
+    if((c>=61&&c<=67)||(c>=81&&c<=82))return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><line x1="7" y1="19" x2="6" y2="22"/><line x1="11" y1="19" x2="10" y2="22"/><line x1="15" y1="19" x2="14" y2="22"/></svg>';
+    // Snow: white-filled cloud + dots
+    if((c>=71&&c<=77)||(c>=85&&c<=86))return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 17H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><circle cx="8" cy="20" r="0.5" fill="#000"/><circle cx="12" cy="20" r="0.5" fill="#000"/><circle cx="16" cy="20" r="0.5" fill="#000"/></svg>';
+    // Thunderstorm: white-filled cloud + lightning
+    if(c>=95)return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 16H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/><polyline points="13,17 10,21 14,21 11,25" fill="none"/></svg>';
+    // Fallback: white-filled cloud
+    return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/></svg>';
+  }
+
+  /**
+   * Google Calendar event colorId to person. Each person gets one of the
+   * existing grayscale bar patterns (cw-bar-N) so no new color dithers (ADR 0004).
+   * colorName is the Google Calendar color name, shown in the legend so the
+   * family remembers which color to pick. `invert` draws the event as white
+   * text on black (holidays) instead of a patterned bar.
+   */
+  var PERSON_COLORS = {
+    '11': { name: 'Family', bar: 1, colorName: 'Tomato' },
+    '5': { name: 'Lindy', bar: 0, colorName: 'Banana' },
+    '3': { name: 'Adam', bar: 4, colorName: 'Grape' },
+    '10': { name: 'Julian', bar: 7, colorName: 'Basil' },
+    '9': { name: 'Birthdays', bar: 2, colorName: 'Blueberry' },
+    '8': { name: 'Holidays', bar: 10, colorName: 'Graphite', invert: true }
+  };
+
+  /**
+   * Legend order. Kept as an array because a JavaScript object iterates its
+   * integer-like keys (the colorIds) in numeric order, not insertion order.
+   */
+  var PERSON_ORDER = ['Family', 'Lindy', 'Adam', 'Julian', 'Birthdays', 'Holidays'];
+
+  /**
+   * Person for an event color, or null when the event has no mapped color.
+   * @param {string|number|undefined} colorId - Google Calendar event colorId
+   * @returns {Object|null} name and bar index, or null
+   */
+  function personForColor(colorId) {
+    if (colorId === undefined || colorId === null || colorId === '') return null;
+    return PERSON_COLORS[String(colorId)] || null;
+  }
+
+  /**
+   * Split minutes-since-midnight into a 12-hour clock reading.
+   * @param {number} m - minutes since midnight (1440 counts as midnight)
+   * @returns {Object} h (1-12), mm (0-59), and pm (boolean)
+   */
+  function split12(m) {
+    var t = ((m % 1440) + 1440) % 1440;
+    var h24 = Math.floor(t / 60), mm = t % 60;
+    var h = h24 % 12; if (h === 0) h = 12;
+    return { h: h, mm: mm, pm: h24 >= 12 };
+  }
+
+  /**
+   * Compact 12-hour time: "9am", "2:30pm", "12pm".
+   * @param {number} m - minutes since midnight
+   * @returns {string}
+   */
+  function fmt12(m) {
+    var p = split12(m);
+    return p.h + (p.mm ? ':' + (p.mm < 10 ? '0' : '') + p.mm : '') + (p.pm ? 'pm' : 'am');
+  }
+
+  /**
+   * Compact 12-hour range. The am/pm suffix appears once when both ends share
+   * it ("7-10pm") and on both ends when the range crosses noon ("11:30am-1pm").
+   * @param {number} s - start, minutes since midnight
+   * @param {number} e - end, minutes since midnight
+   * @returns {string}
+   */
+  function fmtRange12(s, e) {
+    var a = fmt12(s), b = fmt12(e);
+    if (split12(s).pm === split12(e).pm) a = a.replace(/[ap]m$/, '');
+    return a + '-' + b;
+  }
+
+  /**
+   * Hour label for the time axis: "7 AM", "12 PM".
+   * @param {number} m - minutes since midnight, on the hour
+   * @returns {string}
+   */
+  function hourLabel12(m) {
+    var p = split12(m);
+    return p.h + (p.pm ? ' PM' : ' AM');
+  }
+
+  /**
+   * Visible grid range. The grid always covers the fixed default range so the
+   * layout stays steady from week to week; it grows to whole hours only when an
+   * event starts earlier or ends later.
+   * @param {number} earliest - earliest event start (minutes), any value when there are no events
+   * @param {number} latest - latest event end (minutes)
+   * @param {boolean} hasTimed - whether any timed event exists
+   * @param {number} defMin - fixed range start (minutes)
+   * @param {number} defMax - fixed range end (minutes)
+   * @returns {Object} min and max, in minutes, on whole hours
+   */
+  function gridRange(earliest, latest, hasTimed, defMin, defMax) {
+    var min = defMin, max = defMax;
+    if (hasTimed) {
+      if (earliest < min) min = Math.floor(earliest / 60) * 60;
+      if (latest > max) max = Math.min(1440, Math.ceil(latest / 60) * 60);
+    }
+    return { min: min, max: max };
+  }
+
+  /**
+   * Add whole days to an ISO date. Uses UTC math on purpose: local-time Date
+   * math shifts a date by one day on renderers west of UTC.
+   * @param {string} iso - "YYYY-MM-DD"
+   * @param {number} n - days to add (may be negative)
+   * @returns {string} "YYYY-MM-DD"
+   */
+  function addDays(iso, n) {
+    var p = iso.split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+  }
+
+  /**
+   * First day of the week that contains `iso`.
+   * @param {string} iso - "YYYY-MM-DD"
+   * @param {number} firstDay - 0 = Sunday, 1 = Monday
+   * @returns {string} "YYYY-MM-DD"
+   */
+  function weekStart(iso, firstDay) {
+    var p = iso.split('-');
+    var dow = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return addDays(iso, -((dow - (firstDay || 0) + 7) % 7));
+  }
+
+  /**
+   * Easy-to-read 12-hour clock: "7:00 PM", "9:30 AM".
+   * @param {number} m - minutes since midnight (1440 counts as midnight)
+   * @returns {string}
+   */
+  function fmtClock(m) {
+    var t = ((m % 1440) + 1440) % 1440;
+    var h24 = Math.floor(t / 60), mm = t % 60;
+    var h = h24 % 12; if (h === 0) h = 12;
+    return h + ':' + (mm < 10 ? '0' : '') + mm + (h24 >= 12 ? ' PM' : ' AM');
+  }
+
+  /**
+   * Group events into `count` consecutive days starting at `today`. Each day
+   * holds its all-day events and its timed events sorted by start time, with
+   * `sm`/`em` in minutes. An end on a later day is clamped to midnight (1440).
+   * @param {Array<Object>} events - flat event array from the middleware
+   * @param {string} today - "YYYY-MM-DD" in the calendar's time zone
+   * @param {number} count - number of days
+   * @returns {Array<Object>} date, allDay, and timed for each day
+   */
+  function agendaDays(events, today, count) {
+    var days = [], byDate = {};
+    for (var i = 0; i < count; i++) {
+      var date = addDays(today, i);
+      var day = { date: date, allDay: [], timed: [] };
+      days.push(day); byDate[date] = day;
+    }
+    for (var j = 0; j < events.length; j++) {
+      var ev = events[j];
+      if (ev.all_day) {
+        var sd = (ev.start_full || ev.start || '').substring(0, 10);
+        var ed = (ev.end_full || ev.end || '').substring(0, 10) || addDays(sd, 1);
+        if (!sd) continue;
+        for (var d = sd; d < ed; d = addDays(d, 1)) { if (byDate[d]) byDate[d].allDay.push(ev); }
+      } else {
+        var dk = (ev.date_time || ev.start_full || '').substring(0, 10);
+        if (!byDate[dk]) continue;
+        var sm = toMin(ev.start, ev.start_full || ev.date_time);
+        if (sm < 0) continue;
+        var endDay = (ev.end_full || '').substring(0, 10);
+        var em = endDay && endDay > dk ? 1440 : toMin(ev.end, ev.end_full);
+        if (em <= sm) em = sm + 60;
+        byDate[dk].timed.push({ ev: ev, sm: sm, em: em });
+      }
+    }
+    for (var k = 0; k < days.length; k++) days[k].timed.sort(function (a, b) { return a.sm - b.sm || a.em - b.em; });
+    return days;
+  }
+
+  /**
+   * Lay out events on a grid of whole weeks. Each multi-day all-day event
+   * becomes one bar per week row (`col`, `span`, a `lane` so that overlapping
+   * bars stack, and `contL`/`contR` when it continues from or into another
+   * week). Everything else goes in `items`, one list per day: single-day
+   * all-day events first (`sm` = -1), then timed events by start minute.
+   * @param {Array<Object>} events - flat event array from the middleware
+   * @param {string} start - "YYYY-MM-DD", the first day of the grid
+   * @param {number} weeks - number of week rows
+   * @returns {Array<Object>} days, bars, lanes, and items for each week
+   */
+  function monthWeeks(events, start, weeks) {
+    var rows = [], index = {};
+    for (var w = 0; w < weeks; w++) {
+      var row = { days: [], bars: [], lanes: 0, items: [[], [], [], [], [], [], []] };
+      for (var c = 0; c < 7; c++) {
+        var iso = addDays(start, w * 7 + c);
+        row.days.push(iso); index[iso] = { w: w, c: c };
+      }
+      rows.push(row);
+    }
+    var gridEnd = addDays(start, weeks * 7);
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      if (ev.all_day) {
+        var sd = (ev.start_full || ev.start || '').substring(0, 10);
+        var ed = (ev.end_full || ev.end || '').substring(0, 10) || addDays(sd, 1);
+        if (!sd || ed <= start || sd >= gridEnd) continue;
+        if (addDays(sd, 1) >= ed) { var p = index[sd]; if (p) rows[p.w].items[p.c].push({ ev: ev, sm: -1, em: -1 }); continue; }
+        var from = sd < start ? start : sd, to = ed > gridEnd ? gridEnd : ed;
+        while (from < to) {
+          var at = index[from], weekEnd = addDays(rows[at.w].days[0], 7);
+          var segEnd = to < weekEnd ? to : weekEnd, span = 0;
+          for (var d = from; d < segEnd; d = addDays(d, 1)) span++;
+          rows[at.w].bars.push({ ev: ev, col: at.c, span: span, lane: 0, contL: from > sd, contR: segEnd < ed });
+          from = segEnd;
+        }
+      } else {
+        var dk = (ev.date_time || ev.start_full || '').substring(0, 10);
+        var q = index[dk];
+        if (!q) continue;
+        var sm = toMin(ev.start, ev.start_full || ev.date_time);
+        if (sm < 0) continue;
+        rows[q.w].items[q.c].push({ ev: ev, sm: sm, em: toMin(ev.end, ev.end_full) });
+      }
+    }
+    for (var r = 0; r < rows.length; r++) {
+      var bars = rows[r].bars;
+      bars.sort(function (a, b) { return a.col - b.col || b.span - a.span; });
+      var laneEnds = [];
+      // Longest bars claim the top lanes first so long trips read as one line.
+      var order = bars.slice().sort(function (a, b) { return b.span - a.span || a.col - b.col; });
+      for (var k = 0; k < order.length; k++) {
+        var bar = order[k], lane = 0;
+        while (laneEnds[lane] && laneEnds[lane].some(function (o) { return bar.col < o.col + o.span && o.col < bar.col + bar.span; })) lane++;
+        bar.lane = lane;
+        (laneEnds[lane] = laneEnds[lane] || []).push(bar);
+      }
+      rows[r].lanes = laneEnds.length;
+      for (var dc = 0; dc < 7; dc++) rows[r].items[dc].sort(function (a, b) { return a.sm - b.sm; });
+    }
+    return rows;
+  }
+
+  /**
+   * Plain-English name for a WMO weather code (Open-Meteo `weather_code`).
+   * @param {number|string|null|undefined} code
+   * @returns {string}
+   */
+  function weatherText(code) {
+    if (code === null || code === undefined || code === '') return '';
+    var c = +code;
+    if (c === 0) return 'Clear';
+    if (c === 1) return 'Mostly clear';
+    if (c === 2) return 'Partly cloudy';
+    if (c === 3) return 'Overcast';
+    if (c === 45 || c === 48) return 'Fog';
+    if (c >= 51 && c <= 57) return 'Drizzle';
+    if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) return 'Rain';
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return 'Snow';
+    if (c >= 95) return 'Thunderstorm';
+    return '';
+  }
+  var WEEKS = 5, OTHER_BAR = 5, NUM_H = 22, LANE_H = 17;
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  var container = document.getElementById("mo-container");
+  // Same fit as full.liquid: the X renderer resizes the window before the
+  // capture and zooms the framework wrappers, so the container lives on the
+  // body and fits again on each resize.
+  function fitToScreen() {
+    var DESIGN_W = 800;
+    var scr = document.querySelector('.screen');
+    var cls = scr ? scr.className : '';
+    if (container.parentNode !== document.body) document.body.appendChild(container);
+    container.style.width = '100px'; container.style.height = '100px'; container.style.transform = 'none';
+    var s = container.getBoundingClientRect().width / 100 || 1;
+    var vw = window.innerWidth || DESIGN_W;
+    var vh = window.innerHeight || 480;
+    if (/screen--lg/.test(cls)) vh = Math.round(vw * (/screen--portrait/.test(cls) ? 4 / 3 : 3 / 4));
+    document.documentElement.style.minHeight = vh + 'px'; document.body.style.minHeight = vh + 'px';
+    container.style.width = DESIGN_W + 'px'; container.style.height = Math.round(DESIGN_W * vh / vw) + 'px';
+    container.style.transform = 'scale(' + (vw / DESIGN_W / s) + ')';
+  }
+  fitToScreen();
+  window.addEventListener('resize', function () { fitToScreen(); fitLists(); });
+
+  function esc(s) { var d = document.createElement("div"); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+  function parseSlot(literal) {
+    try { return deepParse(JSON.parse(sanitizeJson(literal))); } catch (e) { return null; }
+  }
+  function findDaily(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.daily) return raw;
+    for (var k in raw) { if (raw[k] && typeof raw[k] === 'object' && raw[k].daily) return raw[k]; }
+    return null;
+  }
+
+  // Same script-breakout guard as every injection point in full.liquid.
+  var calRaw = parseSlot(`{{ IDX_0 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var wx = findDaily(parseSlot(`{{ IDX_1 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`));
+  var aqUnused = `{{ IDX_2 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`;
+
+  if (!hasCalData(calRaw)) {
+    container.innerHTML = '<div class="mo-wrap"><div class="mo-error"><b>No calendar data yet.</b><br>Check the polling URLs and token in the plugin settings.</div></div>';
+    return;
+  }
+  var cd = calRaw.data || calRaw;
+  var nowIso = cd.today_in_tz || '';
+  var todayIso = nowIso.substring(0, 10);
+  var events = (cd.events || []).filter(function (ev) { return !isIgnoredEvent(ev); });
+  var weeks = monthWeeks(events, weekStart(todayIso, cd.first_day), WEEKS);
+  var dow0 = cd.first_day || 0;
+
+  function barFor(color) { var p = personForColor(color); return p ? p.bar : OTHER_BAR; }
+  function isInvert(color) { var p = personForColor(color); return !!(p && p.invert); }
+  function parts(iso) { var p = iso.split('-'); return { y: +p[0], m: +p[1], d: +p[2], dow: new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() }; }
+
+  // Header: today's date, today's holidays (if any), and the weather.
+  var t = parts(todayIso), h = '<div class="mo-wrap"><div class="mo-top"><div>';
+  h += '<div class="mo-date">' + DAY_NAMES[t.dow] + ', ' + MONTHS[t.m - 1] + ' ' + t.d + '</div>';
+  var todayNames = [];
+  for (var e0 = 0; e0 < events.length; e0++) {
+    var ev0 = events[e0];
+    if (!ev0.all_day || !isInvert(ev0.color)) continue;
+    var s0 = (ev0.start_full || '').substring(0, 10), x0 = (ev0.end_full || '').substring(0, 10) || addDays(s0, 1);
+    if (s0 <= todayIso && todayIso < x0) todayNames.push(ev0.summary || '');
+  }
+  if (todayNames.length) h += '<div class="mo-sub">' + esc(todayNames.join(' · ')) + '</div>';
+  h += '</div>';
+  if (wx && wx.daily && wx.daily.time) {
+    var dl = wx.daily, wi = Math.max(0, dl.time.indexOf(todayIso));
+    var cur = wx.current && wx.current.temperature_2m != null ? Math.round(wx.current.temperature_2m) : Math.round(dl.temperature_2m_max[wi]);
+    h += '<div class="mo-wx">' + wIcon(dl.weather_code[wi]) + '<div class="mo-temp">' + cur + '°</div>' +
+      '<div class="mo-wx-text">' + esc(weatherText(dl.weather_code[wi])) + '<br><span>↑' + Math.round(dl.temperature_2m_max[wi]) + '° ↓' + Math.round(dl.temperature_2m_min[wi]) + '°</span></div></div>';
+  }
+  h += '</div><div class="mo-dow">';
+  for (var dw = 0; dw < 7; dw++) h += '<div>' + DOW[(dow0 + dw) % 7] + '</div>';
+  h += '</div><div class="mo-weeks">';
+
+  for (var w = 0; w < weeks.length; w++) {
+    var wk = weeks[w], colLanes = [0, 0, 0, 0, 0, 0, 0];
+    // Each day starts its list below the lowest bar that crosses that day, so a
+    // day with no bars gets no empty gap.
+    for (var bl = 0; bl < wk.bars.length; bl++) for (var bc = wk.bars[bl].col; bc < wk.bars[bl].col + wk.bars[bl].span; bc++) colLanes[bc] = Math.max(colLanes[bc], wk.bars[bl].lane + 1);
+    h += '<div class="mo-week">';
+    for (var c = 0; c < 7; c++) {
+      var iso = wk.days[c], dp = parts(iso), cls = iso === todayIso ? ' is-today' : iso < todayIso ? ' is-past' : '';
+      var label = dp.d === 1 ? '<small>' + MONTHS[dp.m - 1].substring(0, 3) + '</small>' + dp.d : dp.d;
+      h += '<div class="mo-day' + cls + '"><div class="mo-num">' + label + '</div>';
+      h += '<div class="mo-list" style="top:' + (NUM_H + colLanes[c] * LANE_H) + 'px">';
+      var items = wk.items[c];
+      for (var it = 0; it < items.length; it++) {
+        var item = items[it], ev = item.ev, past = iso < todayIso, name = esc(ev.summary || 'No title');
+        if (item.sm < 0) {
+          var inv = isInvert(ev.color);
+          h += '<div class="mo-item is-allday' + (inv ? ' is-invert' : '') + (past ? ' is-past' : '') + '">' +
+            (inv ? '' : '<div class="mo-stripe mo-bar-' + barFor(ev.color) + '"></div>') + '<span>' + name + '</span></div>';
+        } else {
+          h += '<div class="mo-item' + (past ? ' is-past' : '') + '"><div class="mo-stripe mo-bar-' + barFor(ev.color) + '"></div>' +
+            '<span><b>' + fmt12(item.sm) + '</b>' + name + '</span></div>';
+        }
+      }
+      h += '</div></div>';
+    }
+    for (var b = 0; b < wk.bars.length; b++) {
+      var bar = wk.bars[b], binv = isInvert(bar.ev.color), bpast = wk.days[bar.col + bar.span - 1] < todayIso;
+      h += '<div class="mo-bar' + (binv ? ' is-invert' : '') + (bpast ? ' is-past' : '') + (bar.contL ? ' contL' : '') + (bar.contR ? ' contR' : '') + '" style="' +
+        'top:' + (NUM_H - 1 + bar.lane * LANE_H) + 'px;left:calc(' + (bar.col * 100 / 7) + '% + 2px);width:calc(' + (bar.span * 100 / 7) + '% - 4px)">' +
+        (binv ? '' : '<div class="mo-stripe mo-bar-' + barFor(bar.ev.color) + '"></div>') + '<span>' + esc(bar.ev.summary || 'No title') + '</span></div>';
+    }
+    h += '</div>';
+  }
+  h += '</div></div>';
+  container.innerHTML = h;
+
+  // A busy day can overflow its cell: hide the items that do not fit and say
+  // how many are hidden, so nothing is cut off mid-line.
+  function fitLists() {
+    var lists = container.querySelectorAll('.mo-list');
+    for (var li = 0; li < lists.length; li++) {
+      var list = lists[li], old = list.querySelector('.mo-more');
+      if (old) list.removeChild(old);
+      var kids = [].slice.call(list.children);
+      for (var k = 0; k < kids.length; k++) kids[k].style.display = '';
+      var bottom = list.getBoundingClientRect().bottom, hidden = 0;
+      for (var r = kids.length - 1; r >= 0; r--) {
+        if (kids[r].getBoundingClientRect().bottom <= bottom + 0.5) break;
+        kids[r].style.display = 'none'; hidden++;
+      }
+      if (hidden) {
+        var more = document.createElement('div'); more.className = 'mo-more'; list.appendChild(more);
+        more.textContent = '+' + hidden + ' more';
+        while (more.getBoundingClientRect().bottom > bottom + 0.5) {
+          var vis = kids.filter(function (x) { return x.style.display !== 'none'; });
+          if (!vis.length) break;
+          vis[vis.length - 1].style.display = 'none'; hidden++; more.textContent = '+' + hidden + ' more';
+        }
+      }
+    }
+  }
+  fitLists();
+});
+</script>

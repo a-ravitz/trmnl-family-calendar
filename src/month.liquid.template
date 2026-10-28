@@ -1,0 +1,223 @@
+{% comment %}
+  Month at a Glance - TRMNL private plugin (full view).
+  A third view for the same playlist: today's date and weather on top, then
+  five weeks (this week and the next four) as a month grid. Multi-day events
+  span their days as one bar; other events list under each day number with a
+  short start time. Earlier days are grayed out and today has a black badge.
+  It reads the same three polling URLs as full.liquid:
+    IDX_0 = ?src=cal, IDX_1 = ?src=weather, IDX_2 = ?src=aqi (unused here).
+  Needs the five-week calendar window (CONFIG.daysAhead 35 in the middleware).
+  Design width is 800; fitToScreen() scales it to the device.
+{% endcomment %}
+
+<style>
+  * { box-sizing: border-box; }
+  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; }
+  /* Sized by fitToScreen() in the script; see full.liquid.template for why. */
+  #mo-container { position: fixed; left: 0; top: 0; transform-origin: 0 0; background: #fff; z-index: 1; }
+  .mo-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: none; color: #000; }
+
+  .mo-top { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 6px; flex-shrink: 0; }
+  .mo-date { font-size: 27px; font-weight: bold; line-height: 1.05; }
+  .mo-sub { font-size: 13px; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 470px; }
+  .mo-wx { display: flex; align-items: center; gap: 8px; }
+  .mo-wx svg { width: 38px; height: 38px; }
+  .mo-temp { font-size: 34px; font-weight: bold; line-height: 1; }
+  .mo-wx-text { font-size: 13px; line-height: 1.3; }
+  .mo-wx-text span { color: #555; }
+
+  .mo-dow { display: flex; flex-shrink: 0; background: #555; color: #fff; }
+  .mo-dow div { flex: 1; text-align: center; font-size: 13px; font-weight: bold; padding: 2px 0; }
+
+  .mo-weeks { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .mo-week { flex: 1; position: relative; display: flex; min-height: 0; border-bottom: 1px solid #AAA; }
+  .mo-week:last-child { border-bottom: none; }
+  .mo-day { flex: 1; position: relative; border-left: 1px solid #AAA; min-width: 0; overflow: hidden; }
+  .mo-day:first-child { border-left: none; }
+  .mo-num { position: absolute; top: 2px; right: 4px; font-size: 15px; font-weight: bold; line-height: 18px; }
+  .mo-num small { font-size: 11px; margin-right: 2px; }
+  .mo-day.is-today .mo-num { background: #000; color: #fff; border-radius: 3px; padding: 0 5px; }
+  .mo-day.is-past .mo-num { color: #AAA; }
+
+  .mo-bar { position: absolute; height: 15px; display: flex; align-items: stretch; font-size: 11px; font-weight: bold;
+    background: #fff; border: 1px solid #555; border-radius: 3px; overflow: hidden; white-space: nowrap; z-index: 2; }
+  .mo-bar.contL { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .mo-bar.contR { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .mo-bar span { padding: 0 4px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .mo-bar.is-invert { background: #000; color: #fff; border-color: #000; }
+  .mo-bar.is-past { color: #AAA; border-color: #AAA; }
+  .mo-bar.is-invert.is-past { background: #AAA; color: #fff; }
+
+  .mo-list { position: absolute; left: 3px; right: 3px; bottom: 1px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+  .mo-item { display: flex; align-items: stretch; font-size: 11px; line-height: 13px; white-space: nowrap; flex-shrink: 0; }
+  .mo-item span { overflow: hidden; text-overflow: ellipsis; padding-left: 3px; }
+  .mo-item b { font-weight: bold; margin-right: 3px; }
+  .mo-item.is-allday { border: 1px solid #555; border-radius: 3px; font-weight: bold; }
+  .mo-item.is-invert { background: #000; color: #fff; border-color: #000; }
+  .mo-item.is-past { color: #AAA; border-color: #AAA; }
+  .mo-item.is-invert.is-past { background: #AAA; color: #fff; }
+  .mo-more { font-size: 10px; font-weight: bold; color: #555; line-height: 12px; }
+  .mo-stripe { width: 4px; flex-shrink: 0; }
+
+  .mo-bar-0 { background: #AAA; }
+  .mo-bar-1 { background: #000; }
+  .mo-bar-2 { background: #fff; border-right: 1px solid #000; }
+  .mo-bar-4 { background: repeating-linear-gradient(-45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .mo-bar-5 { background: repeating-linear-gradient(0deg, #AAA 0px, #AAA 2px, #fff 2px, #fff 4px); }
+  .mo-bar-7 { background: repeating-linear-gradient(0deg, #000 0px, #000 2px, #fff 2px, #fff 4px); }
+  .mo-bar-10 { background: repeating-linear-gradient(45deg, #000 0px, #000 1.5px, #fff 1.5px, #fff 3px); }
+  .is-past .mo-stripe { opacity: 0.4; }
+
+  .mo-error { padding: 20px; font-size: 16px; }
+</style>
+
+<div id="mo-container"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var IGNORED_PHRASES = compileIgnoredPhrases(String.raw`{{ trmnl.plugin_settings.custom_fields_values.ignored_phrases }}`);
+  // @generated:helpers
+  var WEEKS = 5, OTHER_BAR = 5, NUM_H = 22, LANE_H = 17;
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  var container = document.getElementById("mo-container");
+  // Same fit as full.liquid: the X renderer resizes the window before the
+  // capture and zooms the framework wrappers, so the container lives on the
+  // body and fits again on each resize.
+  function fitToScreen() {
+    var DESIGN_W = 800;
+    var scr = document.querySelector('.screen');
+    var cls = scr ? scr.className : '';
+    if (container.parentNode !== document.body) document.body.appendChild(container);
+    container.style.width = '100px'; container.style.height = '100px'; container.style.transform = 'none';
+    var s = container.getBoundingClientRect().width / 100 || 1;
+    var vw = window.innerWidth || DESIGN_W;
+    var vh = window.innerHeight || 480;
+    if (/screen--lg/.test(cls)) vh = Math.round(vw * (/screen--portrait/.test(cls) ? 4 / 3 : 3 / 4));
+    document.documentElement.style.minHeight = vh + 'px'; document.body.style.minHeight = vh + 'px';
+    container.style.width = DESIGN_W + 'px'; container.style.height = Math.round(DESIGN_W * vh / vw) + 'px';
+    container.style.transform = 'scale(' + (vw / DESIGN_W / s) + ')';
+  }
+  fitToScreen();
+  window.addEventListener('resize', function () { fitToScreen(); fitLists(); });
+
+  function esc(s) { var d = document.createElement("div"); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+  function parseSlot(literal) {
+    try { return deepParse(JSON.parse(sanitizeJson(literal))); } catch (e) { return null; }
+  }
+  function findDaily(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.daily) return raw;
+    for (var k in raw) { if (raw[k] && typeof raw[k] === 'object' && raw[k].daily) return raw[k]; }
+    return null;
+  }
+
+  // Same script-breakout guard as every injection point in full.liquid.
+  var calRaw = parseSlot(`{{ IDX_0 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`);
+  var wx = findDaily(parseSlot(`{{ IDX_1 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`));
+  var aqUnused = `{{ IDX_2 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`;
+
+  if (!hasCalData(calRaw)) {
+    container.innerHTML = '<div class="mo-wrap"><div class="mo-error"><b>No calendar data yet.</b><br>Check the polling URLs and token in the plugin settings.</div></div>';
+    return;
+  }
+  var cd = calRaw.data || calRaw;
+  var nowIso = cd.today_in_tz || '';
+  var todayIso = nowIso.substring(0, 10);
+  var events = (cd.events || []).filter(function (ev) { return !isIgnoredEvent(ev); });
+  var weeks = monthWeeks(events, weekStart(todayIso, cd.first_day), WEEKS);
+  var dow0 = cd.first_day || 0;
+
+  function barFor(color) { var p = personForColor(color); return p ? p.bar : OTHER_BAR; }
+  function isInvert(color) { var p = personForColor(color); return !!(p && p.invert); }
+  function parts(iso) { var p = iso.split('-'); return { y: +p[0], m: +p[1], d: +p[2], dow: new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay() }; }
+
+  // Header: today's date, today's holidays (if any), and the weather.
+  var t = parts(todayIso), h = '<div class="mo-wrap"><div class="mo-top"><div>';
+  h += '<div class="mo-date">' + DAY_NAMES[t.dow] + ', ' + MONTHS[t.m - 1] + ' ' + t.d + '</div>';
+  var todayNames = [];
+  for (var e0 = 0; e0 < events.length; e0++) {
+    var ev0 = events[e0];
+    if (!ev0.all_day || !isInvert(ev0.color)) continue;
+    var s0 = (ev0.start_full || '').substring(0, 10), x0 = (ev0.end_full || '').substring(0, 10) || addDays(s0, 1);
+    if (s0 <= todayIso && todayIso < x0) todayNames.push(ev0.summary || '');
+  }
+  if (todayNames.length) h += '<div class="mo-sub">' + esc(todayNames.join(' · ')) + '</div>';
+  h += '</div>';
+  if (wx && wx.daily && wx.daily.time) {
+    var dl = wx.daily, wi = Math.max(0, dl.time.indexOf(todayIso));
+    var cur = wx.current && wx.current.temperature_2m != null ? Math.round(wx.current.temperature_2m) : Math.round(dl.temperature_2m_max[wi]);
+    h += '<div class="mo-wx">' + wIcon(dl.weather_code[wi]) + '<div class="mo-temp">' + cur + '°</div>' +
+      '<div class="mo-wx-text">' + esc(weatherText(dl.weather_code[wi])) + '<br><span>↑' + Math.round(dl.temperature_2m_max[wi]) + '° ↓' + Math.round(dl.temperature_2m_min[wi]) + '°</span></div></div>';
+  }
+  h += '</div><div class="mo-dow">';
+  for (var dw = 0; dw < 7; dw++) h += '<div>' + DOW[(dow0 + dw) % 7] + '</div>';
+  h += '</div><div class="mo-weeks">';
+
+  for (var w = 0; w < weeks.length; w++) {
+    var wk = weeks[w], colLanes = [0, 0, 0, 0, 0, 0, 0];
+    // Each day starts its list below the lowest bar that crosses that day, so a
+    // day with no bars gets no empty gap.
+    for (var bl = 0; bl < wk.bars.length; bl++) for (var bc = wk.bars[bl].col; bc < wk.bars[bl].col + wk.bars[bl].span; bc++) colLanes[bc] = Math.max(colLanes[bc], wk.bars[bl].lane + 1);
+    h += '<div class="mo-week">';
+    for (var c = 0; c < 7; c++) {
+      var iso = wk.days[c], dp = parts(iso), cls = iso === todayIso ? ' is-today' : iso < todayIso ? ' is-past' : '';
+      var label = dp.d === 1 ? '<small>' + MONTHS[dp.m - 1].substring(0, 3) + '</small>' + dp.d : dp.d;
+      h += '<div class="mo-day' + cls + '"><div class="mo-num">' + label + '</div>';
+      h += '<div class="mo-list" style="top:' + (NUM_H + colLanes[c] * LANE_H) + 'px">';
+      var items = wk.items[c];
+      for (var it = 0; it < items.length; it++) {
+        var item = items[it], ev = item.ev, past = iso < todayIso, name = esc(ev.summary || 'No title');
+        if (item.sm < 0) {
+          var inv = isInvert(ev.color);
+          h += '<div class="mo-item is-allday' + (inv ? ' is-invert' : '') + (past ? ' is-past' : '') + '">' +
+            (inv ? '' : '<div class="mo-stripe mo-bar-' + barFor(ev.color) + '"></div>') + '<span>' + name + '</span></div>';
+        } else {
+          h += '<div class="mo-item' + (past ? ' is-past' : '') + '"><div class="mo-stripe mo-bar-' + barFor(ev.color) + '"></div>' +
+            '<span><b>' + fmt12(item.sm) + '</b>' + name + '</span></div>';
+        }
+      }
+      h += '</div></div>';
+    }
+    for (var b = 0; b < wk.bars.length; b++) {
+      var bar = wk.bars[b], binv = isInvert(bar.ev.color), bpast = wk.days[bar.col + bar.span - 1] < todayIso;
+      h += '<div class="mo-bar' + (binv ? ' is-invert' : '') + (bpast ? ' is-past' : '') + (bar.contL ? ' contL' : '') + (bar.contR ? ' contR' : '') + '" style="' +
+        'top:' + (NUM_H - 1 + bar.lane * LANE_H) + 'px;left:calc(' + (bar.col * 100 / 7) + '% + 2px);width:calc(' + (bar.span * 100 / 7) + '% - 4px)">' +
+        (binv ? '' : '<div class="mo-stripe mo-bar-' + barFor(bar.ev.color) + '"></div>') + '<span>' + esc(bar.ev.summary || 'No title') + '</span></div>';
+    }
+    h += '</div>';
+  }
+  h += '</div></div>';
+  container.innerHTML = h;
+
+  // A busy day can overflow its cell: hide the items that do not fit and say
+  // how many are hidden, so nothing is cut off mid-line.
+  function fitLists() {
+    var lists = container.querySelectorAll('.mo-list');
+    for (var li = 0; li < lists.length; li++) {
+      var list = lists[li], old = list.querySelector('.mo-more');
+      if (old) list.removeChild(old);
+      var kids = [].slice.call(list.children);
+      for (var k = 0; k < kids.length; k++) kids[k].style.display = '';
+      var bottom = list.getBoundingClientRect().bottom, hidden = 0;
+      for (var r = kids.length - 1; r >= 0; r--) {
+        if (kids[r].getBoundingClientRect().bottom <= bottom + 0.5) break;
+        kids[r].style.display = 'none'; hidden++;
+      }
+      if (hidden) {
+        var more = document.createElement('div'); more.className = 'mo-more'; list.appendChild(more);
+        more.textContent = '+' + hidden + ' more';
+        while (more.getBoundingClientRect().bottom > bottom + 0.5) {
+          var vis = kids.filter(function (x) { return x.style.display !== 'none'; });
+          if (!vis.length) break;
+          vis[vis.length - 1].style.display = 'none'; hidden++; more.textContent = '+' + hidden + ' more';
+        }
+      }
+    }
+  }
+  fitLists();
+});
+</script>
