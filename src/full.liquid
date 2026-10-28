@@ -23,11 +23,16 @@
 
 <style>
   * { box-sizing: border-box; }
-  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; width: 100% !important; height: 480px !important }
-  #cw-container { width: 100%; height: 480px; }
+  .screen, .view, .layout, .layout--col, .layout--row { padding: 0 !important; margin: 0 !important; }
+  /* The container is sized by fitToScreen() in the script, not by CSS: TRMNL's
+     renderers scale the framework wrappers differently per device (the X
+     editor preview is 1040x780 at a 1.8 pixel ratio, while the device render
+     resizes to a 1872x1404 viewport and zooms the framework wrappers), so any
+     fixed size here gets scaled twice on some of them. */
+  #cw-container { position: fixed; left: 0; top: 0; transform-origin: 0 0; background: #fff; z-index: 1; }
 
   .cw-wrap {
-    width: 100%; height: 480px;
+    width: 100%; height: 100%;
     display: flex; flex-direction: column;
     font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: none; overflow: hidden;
@@ -69,7 +74,8 @@
     gap: 2px; min-height: 30px; border-left: 1px solid #AAA;
     position: relative; overflow: hidden;
   }
-  .cw-wx-text svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .cw-wx-text svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .cw-wx-text svg.cw-wind-ico { width: 16px; height: 16px; margin-left: 1px; }
   /* 75% white text-shadow halo: keeps the digits readable while letting the temperature trend
      line stay partially visible through the outline. Eight 1px offsets give a uniform halo on
      all sides. On the 2-bit device this rgba color is not in the native palette (#000/#555/#AAA/
@@ -108,10 +114,6 @@
     position: absolute; left: 0; right: 0; top: 0; bottom: 0;
     width: 100%; height: 100%; z-index: 2;
   }
-  .cw-wx-now {
-    position: absolute; top: 0; bottom: 0;
-    width: 2px; background: #000; z-index: 4;
-  }
   .cw-wx-text {
     position: absolute; top: 1px; left: 1px; right: 1px;
     z-index: 3;
@@ -120,10 +122,10 @@
 
   /* === ALL-DAY === */
   .cw-allday-row { display: flex; flex-shrink: 0; border-bottom: 1px solid #000; }
-  .cw-allday-label { width: 34px; flex-shrink: 0; font: 7px sans-serif; color: #555; border-bottom: 1px solid #000; }
+  .cw-allday-label { width: 34px; flex-shrink: 0; font: bold 7px sans-serif; color: #000; border-bottom: 1px solid #000; }
   .cw-allday-cell { overflow: hidden; display: flex; flex-direction: column; gap: 1px; border-left: 1px solid #AAA; }
   .cw-allday-evt { display: flex; align-items: stretch; overflow: hidden; }
-  .cw-allday-bar { width: 6px; flex-shrink: 0; }
+  .cw-allday-bar { width: 8px; flex-shrink: 0; }
   .cw-allday-text {
     flex: 1; font: 8px/1.4 sans-serif;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -131,6 +133,7 @@
   }
   .cw-allday-text.is-past { background: #AAA; }
   .cw-allday-text.is-future { background: #fff; }
+  .cw-allday-text.is-invert { background: #000; color: #fff; font-weight: bold; border-color: #000; border-left: 1px solid #000; }
 
   /* === TIME GRID === */
   .cw-grid-area { flex: 1; display: flex; overflow: hidden; position: relative; }
@@ -139,6 +142,8 @@
     position: absolute; right: 2px; font: bold 9px sans-serif; color: #555;
     line-height: 1; transform: translateY(-50%); white-space: nowrap;
   }
+  .cw-hour-label.is-first { transform: translateY(1px); }
+  .cw-hour-label.is-last { transform: translateY(calc(-100% - 1px)); }
   .cw-hour-weather {
     position: absolute; right: 1px; font: 8px sans-serif; color: #555;
     line-height: 1; white-space: nowrap;
@@ -162,10 +167,18 @@
     background: #555; transform: translateY(-50%);
     z-index: 1; pointer-events: none;
   }
+  /* The current half hour is shown as a band, not a line: the screen refreshes
+     only every ~15 min, so an exact "now" line is usually wrong, while the band
+     is right for most of each refresh cycle. The axis bar ties the band to the
+     hour labels. The band is dark gray so that white text reads on it: events
+     that cross it get an inverted, clipped copy (see .cw-evt-now). */
   .cw-now-tick {
-    position: absolute; left: 0; right: -1px;
-    height: 2px; background: #000;
-    transform: translateY(-1px); z-index: 20;
+    position: absolute; right: -1px; width: 4px;
+    background: #000; z-index: 20;
+  }
+  .cw-now-band {
+    position: absolute; left: 0; right: 0;
+    background: #555; z-index: 1;
   }
   .cw-now-label {
     position: absolute; left: 1px;
@@ -181,8 +194,11 @@
     content: ''; position: absolute; left: 0px; top: 0; bottom: 0;
     width: 2px; background: #555; z-index: 10;
   }
-  .cw-hour-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed #AAA; }
-  .cw-half-line { position: absolute; left: 0; right: 0; height: 0; border-top: none; background: repeating-linear-gradient(90deg, #AAA 0px, #AAA 1px, transparent 1px, transparent 7px); height: 1px; }
+  /* z-index 1 keeps the grid lines above the weekend shading of the day columns. */
+  .cw-hour-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed #AAA; z-index: 1; }
+  .cw-half-line { position: absolute; left: 0; right: 0; height: 0; border-top: none; background: repeating-linear-gradient(90deg, #AAA 0px, #AAA 1px, transparent 1px, transparent 7px); height: 1px; z-index: 1; }
+  /* Weekend columns: a light dot pattern, the same one the weather row uses for night. */
+  .cw-weekend { background: radial-gradient(#AAA 0.6px, transparent 0.7px) 0 0 / 4px 4px #fff; }
 
   /* === EVENTS === */
   .cw-evt {
@@ -190,13 +206,17 @@
     display: flex; overflow: hidden;
     min-height: 10px; z-index: 5;
   }
-  .cw-evt-bar { width: 6px; flex-shrink: 0; }
+  /* 8px (was 6px) so the per-person bar patterns are easy to tell apart. */
+  .cw-evt-bar { width: 8px; flex-shrink: 0; }
   .cw-evt-body {
     flex: 1; overflow: hidden;
     min-width: 0; border: 1px solid #AAA; border-left: none;
   }
   .cw-evt-body.is-past { background: #AAA; }
   .cw-evt-body.is-future { background: #fff; }
+  .cw-evt-now { z-index: 6; }
+  .cw-evt-body.is-now { background: #555; border-color: #555; }
+  .cw-evt-body.is-now, .cw-evt-body.is-now .cw-evt-time, .cw-evt-body.is-now .cw-evt-detail { color: #fff; }
   .cw-evt-title {
     font: bold 8px/1.2 sans-serif;
     overflow: hidden; word-break: break-word;
@@ -228,7 +248,9 @@
     font: 8px sans-serif;
   }
   .cw-legend-item { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
-  .cw-legend-swatch { width: 6px; height: 12px; flex-shrink: 0; }
+  .cw-legend-swatch { width: 8px; height: 12px; flex-shrink: 0; }
+  .cw-legend-color { color: #555; }
+  .cw-legend-inv { background: #000; color: #fff; font-weight: bold; padding: 0 2px; }
 
   .cw-empty { display: flex; align-items: center; height: 100%; font: 14px sans-serif; color: #555; }
 
@@ -493,6 +515,120 @@ document.addEventListener("DOMContentLoaded", function() {
     // Fallback: white-filled cloud
     return'<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 0 1 0 9z" fill="#fff"/></svg>';
   }
+
+  /**
+   * Shade for a US AQI value: light gray when the air is good, dark gray when it
+   * is moderate, bold black when it is unhealthy. The bands follow the US EPA
+   * AQI categories (0-50 good, 51-100 moderate, 101+ unhealthy for some or all).
+   * Only native 2-bit shades are returned, so the number never dithers (ADR 0004).
+   * The return type is written without a double brace on purpose: this source
+   * is inlined into a Liquid template, where a double brace opens a Liquid tag.
+   * @param {number|null|undefined} aqi
+   * @returns {Object|null} color (hex) and bold (boolean), or null when there is no usable value
+   */
+  function aqiShade(aqi) {
+    if (aqi === null || aqi === undefined || isNaN(aqi)) return null;
+    if (aqi <= 50) return { color: '#AAA', bold: false };
+    if (aqi <= 100) return { color: '#555', bold: false };
+    return { color: '#000', bold: true };
+  }
+
+  /**
+   * Split minutes-since-midnight into a 12-hour clock reading.
+   * @param {number} m - minutes since midnight (1440 counts as midnight)
+   * @returns {Object} h (1-12), mm (0-59), and pm (boolean)
+   */
+  function split12(m) {
+    var t = ((m % 1440) + 1440) % 1440;
+    var h24 = Math.floor(t / 60), mm = t % 60;
+    var h = h24 % 12; if (h === 0) h = 12;
+    return { h: h, mm: mm, pm: h24 >= 12 };
+  }
+
+  /**
+   * Compact 12-hour time: "9am", "2:30pm", "12pm".
+   * @param {number} m - minutes since midnight
+   * @returns {string}
+   */
+  function fmt12(m) {
+    var p = split12(m);
+    return p.h + (p.mm ? ':' + (p.mm < 10 ? '0' : '') + p.mm : '') + (p.pm ? 'pm' : 'am');
+  }
+
+  /**
+   * Compact 12-hour range. The am/pm suffix appears once when both ends share
+   * it ("7-10pm") and on both ends when the range crosses noon ("11:30am-1pm").
+   * @param {number} s - start, minutes since midnight
+   * @param {number} e - end, minutes since midnight
+   * @returns {string}
+   */
+  function fmtRange12(s, e) {
+    var a = fmt12(s), b = fmt12(e);
+    if (split12(s).pm === split12(e).pm) a = a.replace(/[ap]m$/, '');
+    return a + '-' + b;
+  }
+
+  /**
+   * Hour label for the time axis: "7 AM", "12 PM".
+   * @param {number} m - minutes since midnight, on the hour
+   * @returns {string}
+   */
+  function hourLabel12(m) {
+    var p = split12(m);
+    return p.h + (p.pm ? ' PM' : ' AM');
+  }
+
+  /**
+   * Visible grid range. The grid always covers the fixed default range so the
+   * layout stays steady from week to week; it grows to whole hours only when an
+   * event starts earlier or ends later.
+   * @param {number} earliest - earliest event start (minutes), any value when there are no events
+   * @param {number} latest - latest event end (minutes)
+   * @param {boolean} hasTimed - whether any timed event exists
+   * @param {number} defMin - fixed range start (minutes)
+   * @param {number} defMax - fixed range end (minutes)
+   * @returns {Object} min and max, in minutes, on whole hours
+   */
+  function gridRange(earliest, latest, hasTimed, defMin, defMax) {
+    var min = defMin, max = defMax;
+    if (hasTimed) {
+      if (earliest < min) min = Math.floor(earliest / 60) * 60;
+      if (latest > max) max = Math.min(1440, Math.ceil(latest / 60) * 60);
+    }
+    return { min: min, max: max };
+  }
+
+  /**
+   * Google Calendar event colorId to person. Each person gets one of the
+   * existing grayscale bar patterns (cw-bar-N) so no new color dithers (ADR 0004).
+   * colorName is the Google Calendar color name, shown in the legend so the
+   * family remembers which color to pick. `invert` draws the event as white
+   * text on black (holidays) instead of a patterned bar.
+   */
+  var PERSON_COLORS = {
+    '11': { name: 'Family', bar: 1, colorName: 'Tomato' },
+    '5': { name: 'Lindy', bar: 0, colorName: 'Banana' },
+    '3': { name: 'Adam', bar: 4, colorName: 'Grape' },
+    '10': { name: 'Julian', bar: 7, colorName: 'Basil' },
+    '9': { name: 'Birthdays', bar: 2, colorName: 'Blueberry' },
+    '8': { name: 'Holidays', bar: 10, colorName: 'Graphite', invert: true }
+  };
+
+  /**
+   * Legend order. Kept as an array because a JavaScript object iterates its
+   * integer-like keys (the colorIds) in numeric order, not insertion order.
+   */
+  var PERSON_ORDER = ['Family', 'Lindy', 'Adam', 'Julian', 'Birthdays', 'Holidays'];
+
+  /**
+   * Person for an event color, or null when the event has no mapped color.
+   * @param {string|number|undefined} colorId - Google Calendar event colorId
+   * @returns {Object|null} name and bar index, or null
+   */
+  function personForColor(colorId) {
+    if (colorId === undefined || colorId === null || colorId === '') return null;
+    return PERSON_COLORS[String(colorId)] || null;
+  }
   function deepParseWeather(raw) {
     if (raw == null) return null;
     if (typeof raw === 'string') { try { raw = JSON.parse(sanitizeJson(raw)); } catch(e) { return null; } }
@@ -626,6 +762,34 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 
   var container = document.getElementById("cw-container");
+  // Fit the layout to the real screen. The grid is laid out at a design width
+  // of 800 px (the TRMNL OG width) with a height that keeps the screen's aspect
+  // ratio, then scaled to cover the viewport. On the OG this is 800x480 at 1x;
+  // on the X it is 800x600 scaled 1.3x, which keeps the text readable on the
+  // larger screen. `s` measures any scaling the framework already applies to
+  // our ancestors, so the result fills the screen exactly once.
+  // The TRMNL X device renderer runs the script in a 1040x780 window, then
+  // resizes the window to 1872x1404 before the capture, and the framework then
+  // zooms its .screen wrapper. So the container moves out of the framework
+  // wrappers to the body (no framework zoom there), and it fits again on each
+  // resize. On large screens (.screen--lg) the height comes from the 4:3 shape.
+  function fitToScreen() {
+    var DESIGN_W = 800;
+    var scr = document.querySelector('.screen');
+    var cls = scr ? scr.className : '';
+    if (container.parentNode !== document.body) document.body.appendChild(container);
+    container.style.width = '100px'; container.style.height = '100px'; container.style.transform = 'none';
+    var s = container.getBoundingClientRect().width / 100 || 1;
+    var vw = window.innerWidth || DESIGN_W;
+    var vh = window.innerHeight || 480;
+    if (/screen--lg/.test(cls)) vh = Math.round(vw * (/screen--portrait/.test(cls) ? 4 / 3 : 3 / 4));
+    document.documentElement.style.minHeight = vh + 'px'; document.body.style.minHeight = vh + 'px';
+    var lh = Math.round(DESIGN_W * vh / vw);
+    container.style.width = DESIGN_W + 'px'; container.style.height = lh + 'px';
+    container.style.transform = 'scale(' + (vw / DESIGN_W / s) + ')';
+  }
+  fitToScreen();
+  window.addEventListener('resize', fitToScreen);
   var hasWeather = !!(weatherRaw && weatherRaw.daily);
   // Render diagnostic overlay if issues detected
   function renderDiag() {
@@ -715,9 +879,18 @@ document.addEventListener("DOMContentLoaded", function() {
   var tempMax = daily.temperature_2m_max || [], tempMin = daily.temperature_2m_min || [];
   var wmoCodes = daily.weather_code || [], rainProb = daily.precipitation_probability_max || [];
   var currentTemp = (hasWeather && weatherRaw.current && weatherRaw.current.temperature_2m != null) ? Math.round(weatherRaw.current.temperature_2m) : null;
+  var tempUnit = (hasWeather && weatherRaw.hourly_units && weatherRaw.hourly_units.temperature_2m) || (hasWeather && weatherRaw.current_units && weatherRaw.current_units.temperature_2m) || '';
+  var isFahrenheit = String(tempUnit).indexOf('F') !== -1;
   var sunrise = (daily.sunrise && daily.sunrise[0]) ? daily.sunrise[0].substring(11,16) : null;
   var sunset = (daily.sunset && daily.sunset[0]) ? daily.sunset[0].substring(11,16) : null;
   var uvMax = (daily.uv_index_max && daily.uv_index_max[0] != null) ? Math.round(daily.uv_index_max[0]) : null;
+  // Wind: daily max sustained speed and gusts (the middleware requests mph).
+  var windMaxArr = daily.wind_speed_10m_max || [], gustMaxArr = daily.wind_gusts_10m_max || [];
+  var windToday = windMaxArr[0] != null ? Math.round(windMaxArr[0]) : null;
+  var gustToday = gustMaxArr[0] != null ? Math.round(gustMaxArr[0]) : null;
+  // A day gets the wind marker when its forecast max gust reaches this value.
+  var WINDY_GUST_MPH = 25;
+  var windSvg = '<svg class="cw-wind-ico" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>';
   var aqi = null;
   // Same script-breakout guard as the IDX_0/IDX_1 injections above.
   try { var aqRaw = JSON.parse(sanitizeJson(`{{ IDX_2 | json | replace: '<', '\u003c' | replace: '`', '\u0060' | replace: '${', '\u0024{' }}`)); if(aqRaw && aqRaw.current) aqi = Math.round(aqRaw.current.european_aqi); } catch(e) {}
@@ -767,6 +940,29 @@ document.addEventListener("DOMContentLoaded", function() {
   allCalNames.sort();
   for (var c = 0; c < allCalNames.length; c++) getCalIdx(allCalNames[c]);
 
+  // Bar pattern for an event: the person's pattern when the event color maps to
+  // one (see eventColors.js), else the calendar's pattern. Records which people
+  // are on screen so the legend lists only those, in PERSON_ORDER.
+  // An event without a mapped color must not borrow a person's pattern, so a
+  // calendar index that collides with one falls back to OTHER_BAR ("Other").
+  var peopleSeen = {}, otherSeen = false, OTHER_BAR = 5;
+  var personBars = {}; for (var pk in PERSON_COLORS) personBars[PERSON_COLORS[pk].bar] = true;
+  function barFor(color, cn) {
+    var p = personForColor(color);
+    if (p) { peopleSeen[p.name] = p; return p.bar; }
+    var ci = getCalIdx(cn);
+    if (personBars[ci]) { otherSeen = true; return OTHER_BAR; }
+    return ci;
+  }
+  var peopleShown = [];
+  // Every person is listed, seen this week or not, so the legend doubles as
+  // the key for which Google Calendar color to pick.
+  function collectPeopleShown() {
+    var byName = {}; for (var ck in PERSON_COLORS) byName[PERSON_COLORS[ck].name] = PERSON_COLORS[ck];
+    for (var k = 0; k < PERSON_ORDER.length; k++) { var p = byName[PERSON_ORDER[k]]; if (p) peopleShown.push(p); }
+    if (peopleShown.length > 0 && otherSeen) peopleShown.push({ name: 'Other', bar: OTHER_BAR });
+  }
+
   // === HELPERS ===
   function esc(s){var d=document.createElement("div");d.appendChild(document.createTextNode(s));return d.innerHTML;}
   function fmtH(m){var h=Math.floor(m/60);return(h<10?" ":"")+h+":00";}
@@ -792,13 +988,13 @@ document.addEventListener("DOMContentLoaded", function() {
         var sm=toMin(ev.start, ev.start_full||ev.date_time);
         var em=toMin(ev.end, ev.end_full);
         if(sm<0)continue; if(em<=sm)em=sm+60;
-        tmByDate[dates[i]].push({summary:ev.summary||"No title",desc:ev.description||"",loc:ev.location||"",start:fmtEvt(sm),end:fmtEvt(em),sm:sm,em:em,cn:ev.calname||ev.calendar_name||""});
+        tmByDate[dates[i]].push({summary:ev.summary||"No title",desc:ev.description||"",loc:ev.location||"",start:fmtEvt(sm),end:fmtEvt(em),sm:sm,em:em,cn:ev.calname||ev.calendar_name||"",color:ev.color||""});
         hasTimed=true; if(sm<gMin)gMin=sm; if(em>gMax)gMax=em;
       }
     }
   }
-  if(!hasTimed){gMin=8*60;gMax=18*60;}
-  gMin=Math.floor(gMin/60)*60; gMax=Math.ceil(gMax/60)*60;
+  // Fixed 7 AM - 10 PM grid so the layout stays steady; grows only for earlier/later events.
+  var gr=gridRange(gMin,gMax,hasTimed,7*60,22*60); gMin=gr.min; gMax=gr.max;
   if(gMin===gMax)gMax=gMin+60;
   var rng=gMax-gMin;
 
@@ -808,8 +1004,8 @@ document.addEventListener("DOMContentLoaded", function() {
   // Determine current time and today's date in user's timezone.
   // Both nowMin and todayIso are derived from the same render-time clock,
   // using utc_offset_seconds from the weather API for timezone correction.
-  // This ensures all "now" indicators (time axis tick, weather now-line,
-  // render time pill) are consistent with each other.
+  // This ensures all "now" indicators (current half-hour band, render time
+  // pill, past-event dimming) are consistent with each other.
   var now=new Date();
   var localNow = (weatherRaw && weatherRaw.utc_offset_seconds != null)
     ? new Date(now.getTime() + weatherRaw.utc_offset_seconds*1000 + now.getTimezoneOffset()*60000)
@@ -862,12 +1058,12 @@ document.addEventListener("DOMContentLoaded", function() {
       h+='<line x1="0" y1="20" x2="23" y2="20" stroke="#AAA" stroke-width="1" stroke-dasharray="1,7" vector-effect="non-scaling-stroke"/>';
       h+='<polyline points="';
       var pts='',fc=true;
-      for(var hh=0;hh<24;hh++){if(dh[hh]){if(!fc)pts+=' ';pts+=hh+','+(40-Math.max(0,Math.min(40,dh[hh].t))).toFixed(1);fc=false;}}
+      // The line's scale is Celsius; convert when the middleware serves Fahrenheit.
+      for(var hh=0;hh<24;hh++){if(dh[hh]){if(!fc)pts+=' ';var tc=isFahrenheit?(dh[hh].t-32)*5/9:dh[hh].t;pts+=hh+','+(40-Math.max(0,Math.min(40,tc))).toFixed(1);fc=false;}}
       h+=pts+'" fill="none" stroke="#555" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>';
-      // Vertical "now" line on today's weather cell
-      if(dates[i]===todayIso){var nowPctW=(nowMin/1440)*100;h+='<div class="cw-wx-now" style="left:'+nowPctW+'%"></div>';}
       // Layer 3: Weather icon (left) + min/max temp text (right)
-      h+='<span class="cw-wx-text">'+wIcon(wmoCodes[i])+'<span class="cw-temps px--0.5 rounded--xsmall">'+Math.round(tempMin[i])+'\u00B0<span class="cw-temp-max">/'+Math.round(tempMax[i])+'\u00B0</span></span></span>';
+      var windy=gustMaxArr[i]!=null&&gustMaxArr[i]>=WINDY_GUST_MPH;
+      h+='<span class="cw-wx-text"><span style="display:flex;align-items:center">'+wIcon(wmoCodes[i])+(windy?windSvg:'')+'</span><span class="cw-temps px--0.5 rounded--xsmall">'+Math.round(tempMin[i])+'\u00B0<span class="cw-temp-max">/'+Math.round(tempMax[i])+'\u00B0</span></span></span>';
       h+='</div>';
     }
     h+='</div>';
@@ -879,7 +1075,9 @@ document.addEventListener("DOMContentLoaded", function() {
     for(var i=0;i<dates.length&&i<7;i++){
       var ad=adByDate[dates[i]]||[];
       h+='<div class="cw-allday-cell p--0.5'+(isWeekStart[i]?' cw-week-start':'')+'" style="flex:1;">';
-      for(var a=0;a<ad.length;a++){var ci=getCalIdx(ad[a].calname||ad[a].calendar_name||""),past=isPast(dates[i],1440);h+='<div class="cw-allday-evt"><div class="cw-allday-bar cw-bar-'+ci+'"></div><div class="cw-allday-text px--0.5 '+(past?'is-past':'is-future')+'">'+esc(ad[a].summary||"No title")+'</div></div>';}
+      for(var a=0;a<ad.length;a++){var ci=barFor(ad[a].color,ad[a].calname||ad[a].calendar_name||""),past=isPast(dates[i],1440),pp=personForColor(ad[a].color);
+        if(pp&&pp.invert){h+='<div class="cw-allday-evt"><div class="cw-allday-text is-invert px--0.5">'+esc(ad[a].summary||"No title")+'</div></div>';continue;}
+        h+='<div class="cw-allday-evt"><div class="cw-allday-bar cw-bar-'+ci+'"></div><div class="cw-allday-text px--0.5 '+(past?'is-past':'is-future')+'">'+esc(ad[a].summary||"No title")+'</div></div>';}
       h+='</div>';
     }
     h+='</div>';
@@ -889,7 +1087,8 @@ document.addEventListener("DOMContentLoaded", function() {
   // Left: time axis with hour labels, hourly weather, and now indicator
   h+='<div class="cw-grid-area"><div class="cw-time-axis">';
   // Hour labels (e.g. " 9:00", "10:00")
-  for(var m=gMin;m<=gMax;m+=60) h+='<div class="cw-hour-label" style="top:'+((m-gMin)/rng*100)+'%;">'+fmtH(m)+'</div>';
+  // The first and last labels sit inside the grid instead of centered on its edge, where half of each was cut off.
+  for(var m=gMin;m<=gMax;m+=60) h+='<div class="cw-hour-label'+(m===gMin?' is-first':m===gMax?' is-last':'')+'" style="top:'+((m-gMin)/rng*100)+'%;">'+hourLabel12(m)+'</div>';
   // Hourly weather at half-hour marks: always shows temperature, with the precipitation
   // probability rendered as a horizontal bar behind it (width = p%, drawn when p > 0)
   // and a small vertical tick at the 50% mark of the bar (drawn when p > 50).
@@ -916,9 +1115,12 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     else if(icon){h+='<div class="cw-hour-weather" style="top:'+topPct+'%;">'+icon+'</div>';}
   }
-  // Current time indicator (bold tick line, clamped to grid range)
-  var nowC=Math.max(gMin,Math.min(gMax,nowMin)),nowP=((nowC-gMin)/rng)*100;
-  h+='<div class="cw-now-tick" style="top:'+nowP+'%;"></div>';
+  // Current half-hour slot (e.g. 20:00-20:30), clipped to the visible grid range.
+  // Hidden when the slot falls outside the range.
+  var slotS=Math.floor(nowMin/30)*30,slotE=slotS+30;
+  var bandS=Math.max(gMin,slotS),bandE=Math.min(gMax,slotE);
+  var hasNowBand=bandE>bandS,bandTopP=((bandS-gMin)/rng)*100,bandHtP=((bandE-bandS)/rng)*100;
+  if(hasNowBand) h+='<div class="cw-now-tick" style="top:'+bandTopP+'%;height:'+bandHtP+'%;"></div>';
   h+='</div><div class="cw-columns">';
 
   // Horizontal grid lines: dashed for hours, sparse dots for half-hours
@@ -927,7 +1129,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // Day columns with positioned events
   for(var i=0;i<dates.length&&i<7;i++){
-    h+='<div class="cw-day-col'+(isWeekStart[i]?' cw-week-start':'')+'">';
+    var dowP=dates[i].split('-'),dow=new Date(+dowP[0],+dowP[1]-1,+dowP[2]).getDay();
+    h+='<div class="cw-day-col'+(isWeekStart[i]?' cw-week-start':'')+(dow===0||dow===6?' cw-weekend':'')+'">';
+    if(hasNowBand&&dates[i]===todayIso) h+='<div class="cw-now-band" style="top:'+bandTopP+'%;height:'+bandHtP+'%;"></div>';
     var dt=tmByDate[dates[i]]||[];
     // Assign side-by-side columns for overlapping events
     layoutOverlaps(dt);
@@ -936,30 +1140,43 @@ document.addEventListener("DOMContentLoaded", function() {
       // Position event block: top and height as % of the visible time range
       var topP=((ev.sm-gMin)/rng)*100,htP=((ev.em-ev.sm)/rng)*100;
       if(topP<0){htP+=topP;topP=0;} if(topP+htP>100)htP=100-topP; if(htP<2)htP=2;
-      var dur=ev.em-ev.sm,ci=getCalIdx(ev.cn),past=isPast(dates[i],ev.em);
+      var dur=ev.em-ev.sm,ci=barFor(ev.color,ev.cn),past=isPast(dates[i],ev.em);
       // For overlapping events: divide width equally among columns
       var tc=ev.totalCols||1,col=ev.col||0;
       var leftP=(col/tc)*100,widP=(1/tc)*100;
 
-      h+='<div class="cw-evt" style="top:'+topP+'%;height:'+htP+'%;left:'+leftP+'%;width:'+widP+'%;">';
-      h+='<div class="cw-evt-bar cw-bar-'+ci+'"></div>';
-      h+='<div class="cw-evt-body p--0.5 '+(past?'is-past':'is-future')+'">';
-      h+='<div class="cw-evt-title">'+esc(ev.summary)+'</div>';
+      var evPos='top:'+topP+'%;height:'+htP+'%;left:'+leftP+'%;width:'+widP+'%;';
       // Show time for events 30min+, show location/description for events 60min+
-      if(dur>=30) h+='<div class="cw-evt-time">'+esc(ev.start)+(ev.end?'-'+esc(ev.end):'')+'</div>';
-      if(dur>=60){var det="";if(ev.loc)det+=ev.loc;if(ev.desc){if(det)det+=" - ";det+=ev.desc;}if(det)h+='<div class="cw-evt-detail">'+esc(det)+'</div>';}
-      h+='</div></div>';
+      var evText='<div class="cw-evt-title">'+esc(ev.summary)+'</div>';
+      if(dur>=30) evText+='<div class="cw-evt-time">'+esc(fmtRange12(ev.sm,ev.em))+'</div>';
+      if(dur>=60){var det="";if(ev.loc)det+=ev.loc;if(ev.desc){if(det)det+=" - ";det+=ev.desc;}if(det)evText+='<div class="cw-evt-detail">'+esc(det)+'</div>';}
+      var evBar='<div class="cw-evt-bar cw-bar-'+ci+'"></div>';
+      h+='<div class="cw-evt" style="'+evPos+'">'+evBar+'<div class="cw-evt-body p--0.5 '+(past?'is-past':'is-future')+'">'+evText+'</div></div>';
+      // Where the event crosses the current half-hour band, draw an inverted copy
+      // (dark fill, white text) clipped to the band, so the band stays visible
+      // and the text inside it stays readable.
+      if(hasNowBand&&dates[i]===todayIso&&bandTopP<topP+htP&&bandTopP+bandHtP>topP){
+        var clipT=Math.max(0,(bandTopP-topP)/htP*100),clipB=Math.max(0,(topP+htP-bandTopP-bandHtP)/htP*100);
+        h+='<div class="cw-evt cw-evt-now" style="'+evPos+'clip-path:inset('+clipT+'% 0 '+clipB+'% 0);">'+evBar+'<div class="cw-evt-body p--0.5 is-now">'+evText+'</div></div>';
+      }
     }
     h+='</div>';
   }
   h+='</div></div>';
 
   // --- ROW 5: Legend bar (calendar names left, weather info right) ---
-  var hasExtra = sunrise||sunset||uvMax!==null||aqi!==null;
-  if(allCalNames.length>1||hasExtra){
+  collectPeopleShown();
+  var hasExtra = sunrise||sunset||uvMax!==null||windToday!==null||aqi!==null;
+  if(allCalNames.length>1||hasExtra||peopleShown.length>0){
     h+='<div class="cw-legend py--1 px--1.5">';
-    // Calendar legend: colored swatches + names
-    for(var l=0;l<allCalNames.length;l++){var idx=calNameMap[allCalNames[l]];h+='<span class="cw-legend-item"><span class="cw-legend-swatch rounded--xsmall cw-bar-'+idx+'"></span><span>'+esc(allCalNames[l])+'</span></span>';}
+    // Legend: people (from event colors) when any are on screen, else calendar names
+    if(peopleShown.length>0){
+      for(var l=0;l<peopleShown.length;l++){var lp=peopleShown[l],cn=lp.colorName?' <span class="cw-legend-color">('+esc(lp.colorName)+')</span>':'';
+        if(lp.invert) h+='<span class="cw-legend-item"><span class="cw-legend-inv">'+esc(lp.name)+'</span>'+cn+'</span>';
+        else h+='<span class="cw-legend-item"><span class="cw-legend-swatch rounded--xsmall cw-bar-'+lp.bar+'"></span><span>'+esc(lp.name)+cn+'</span></span>';}
+    } else {
+      for(var l=0;l<allCalNames.length;l++){var idx=calNameMap[allCalNames[l]];h+='<span class="cw-legend-item"><span class="cw-legend-swatch rounded--xsmall cw-bar-'+idx+'"></span><span>'+esc(allCalNames[l])+'</span></span>';}
+    }
     h+='<span style="flex:1"></span>';
     // Rendered time in user's timezone
     if (SHOW_RENDER_TIME) {
@@ -973,7 +1190,8 @@ document.addEventListener("DOMContentLoaded", function() {
     if(sunrise) extras.push(sunSvg+' '+sunrise);
     if(sunset) extras.push(moonSvg+' '+sunset);
     if(uvMax!==null) extras.push('UV:'+uvMax);
-    if(aqi!==null) extras.push('AQI:'+aqi);
+    if(windToday!==null) extras.push('Wind:'+windToday+' mph'+(gustToday!==null?', gusts '+gustToday:''));
+    if(aqi!==null){var aqs=aqiShade(aqi);extras.push(aqs?'<span style="color:'+aqs.color+(aqs.bold?';font-weight:bold':'')+'">AQI:'+aqi+'</span>':'AQI:'+aqi);}
     if(extras.length) h+='<span class="cw-legend-extra">'+extras.join('&nbsp; &nbsp; &nbsp;')+'</span>';
     h+='</div>';
   }

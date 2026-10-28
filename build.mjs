@@ -61,7 +61,10 @@ function fullLiquidHelpers() {
   const jsonRecovery = readModule('src/lib/jsonRecovery.js');
   const diagnosticSeverity = readModule('src/lib/diagnosticSeverity.js');
   const weatherIcon = readModule('src/lib/weatherIcon.js');
-  return [eventLayout, dateLabels, ignored, jsonRecovery, diagnosticSeverity, weatherIcon].join('\n\n');
+  const aqiShade = readModule('src/lib/aqiShade.js');
+  const timeFormat = readModule('src/lib/timeFormat.js');
+  const eventColors = readModule('src/lib/eventColors.js');
+  return [eventLayout, dateLabels, ignored, jsonRecovery, diagnosticSeverity, weatherIcon, aqiShade, timeFormat, eventColors].join('\n\n');
 }
 
 // Helpers inlined into the Apps Script middleware `.gs`.
