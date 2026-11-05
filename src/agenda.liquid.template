@@ -61,6 +61,9 @@
   .ag-evt.is-past .ag-start, .ag-evt.is-past .ag-title { color: #333; font-weight: normal; }
   .ag-evt.is-past .ag-end, .ag-evt.is-past .ag-loc { color: #333; }
   .ag-empty { font-size: 12px; color: #555; padding: 6px 2px; }
+  /* Weekly chore reminders, pinned to the bottom of the day column (see DAY_NOTES). */
+  .ag-note { flex: none; margin: 0 5px 4px; padding: 3px 4px 0; border-top: 1px dashed #555; font-size: 12px; font-weight: bold; color: #000; }
+  .ag-col.is-pastday .ag-note { color: #333; font-weight: normal; }
   .ag-more { font-size: 12px; font-weight: bold; color: #555; padding: 2px 2px 4px; }
 
   .ag-legend { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-top: 2px solid #000; font-size: 11px; white-space: nowrap; overflow: hidden; }
@@ -99,6 +102,8 @@
 document.addEventListener("DOMContentLoaded", function() {
   var IGNORED_PHRASES = compileIgnoredPhrases(String.raw`{{ trmnl.plugin_settings.custom_fields_values.ignored_phrases }}`);
   // @generated:helpers
+  // Weekly reminders that are not calendar events, keyed by weekday (0 = Sunday).
+  var DAY_NOTES = { 1: 'Trash and recycling go out', 3: 'Compost goes out', 4: 'Trash goes out' };
   var DAYS_SHOWN = 7, TOP_ROW = 3, OTHER_BAR = 5, WINDY_GUST_MPH = 25;
   var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -244,7 +249,10 @@ document.addEventListener("DOMContentLoaded", function() {
         (e.ev.location ? '<div class="ag-loc">' + esc(String(e.ev.location).split(',')[0]) + '</div>' : '') + '</div></div>';
     }
     if (!day.allDay.length && !day.timed.length) h += '<div class="ag-empty">Nothing scheduled</div>';
-    h += '</div></div>';
+    h += '</div>';
+    var note = DAY_NOTES[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
+    if (note) h += '<div class="ag-note">' + esc(note) + '</div>';
+    h += '</div>';
   }
   h += '</div></div><div class="ag-legend">';
   for (var l = 0; l < PERSON_ORDER.length; l++) {

@@ -42,6 +42,7 @@ This project is a fork of [guplem/trmnl-cal-weather](https://github.com/guplem/t
 - Sunday to Saturday, with today outlined in black
 - Each event shows its start time, end time, title, and location
 - A busy day ends with "+ N more" instead of a cut-off row
+- Weekly chore notes at the bottom of set days (trash, recycling, compost). Edit `DAY_NOTES` in `src/agenda.liquid.template` to change them.
 
 **Month at a Glance (X)**
 
