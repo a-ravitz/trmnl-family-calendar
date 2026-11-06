@@ -8,6 +8,22 @@ Three [TRMNL](https://usetrmnl.com) e-ink views of one shared family Google Cale
 | **Week Agenda (X)** | The current week, Sunday to Saturday, as easy-to-read event lists in a 4 x 2 grid, plus a weather tile for today |
 | **Month at a Glance (X)** | Today's date, holidays, and weather on top, then five weeks as a month grid |
 
+## Screenshots
+
+These mockups use made-up events and names. Each one is a full TRMNL X screen (1872 x 1404).
+
+**Calendar + Weather (X)**
+
+![Calendar + Weather view: a week as an hour-by-hour grid with weather](docs/screenshots/calendar-weather.png)
+
+**Week Agenda (X)**
+
+![Week Agenda view: the week as event lists in a 4 x 2 grid, with a weather tile](docs/screenshots/week-agenda.png)
+
+**Month at a Glance (X)**
+
+![Month at a Glance view: five weeks as a month grid, with today's weather on top](docs/screenshots/month-at-a-glance.png)
+
 This project is a fork of [guplem/trmnl-cal-weather](https://github.com/guplem/trmnl-cal-weather). That project built the time-grid view, the Apps Script middleware, and the test and build setup. This fork adapts them for the TRMNL X and a family calendar, and adds the two other views.
 
 ## Features
