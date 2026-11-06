@@ -159,6 +159,8 @@ If the repo has no `waiting-for-human-check` label, create it first:
 gh label create "waiting-for-human-check" --description "No human has verified this yet -- direct AI output" --color "D93F0B"
 ```
 
+Whenever someone asks to set up this project for their own family or TRMNL, use the `setup-family-calendar` skill.
+
 Whenever you create a GitHub issue, use the `create-issue` skill. Whenever you implement one, use the `implement-issue` skill. Whenever you review a PR, use the `review-pr` skill.
 
 ## Coding standards

@@ -92,6 +92,8 @@ All three plugins use the same middleware and the same three polling URLs.
 
 Plan on about 30 minutes. You do not need a server or any coding.
 
+> **Using Claude Code?** Open this repo and ask Claude to "set up the family calendar". The `setup-family-calendar` skill asks about your household (people, colors, location, chores), customizes the code, and walks you through every step below.
+
 ### What you need
 
 - **A TRMNL device and account.** Private plugins need the TRMNL Developer add-on or a BYOD (bring your own device) license. If you do not have either, turn on **Developer perks** in your TRMNL account settings.
