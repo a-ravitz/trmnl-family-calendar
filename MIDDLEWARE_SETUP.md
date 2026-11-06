@@ -37,7 +37,7 @@ Replace the contents of `Code.gs` with [`src/middleware/calendar_weather_proxy.g
 ### Step 3: Set the project timezone
 
 1. Open **Project Settings** (gear icon)
-2. Set **Time zone** to your timezone (e.g. `Europe/Madrid`)
+2. Set **Time zone** to your timezone (e.g. `America/New_York`)
 
 > This controls how `Date` math behaves inside the script. Set it to the same timezone you will pass as the `tz` URL parameter.
 
@@ -50,6 +50,8 @@ At the top of the script, set:
 | `token` | A long random string (40+ chars). This is the only thing protecting your data. |
 | `calendarIds` | Leave `[]` to use every calendar checked in your Google Calendar UI, or list explicit IDs |
 | `hideDeclinedEvents` | `true` (default) hides events you answered "No" to; set `false` to keep showing them |
+| `firstDayOfWeek` | `0` (default) starts the week on Sunday; use `1` for Monday |
+| `daysAhead` | `35` (default). Keep it at 35 or more: the Month at a Glance view shows five weeks |
 
 > Location and timezone are NOT configured in the script: every request must carry them as `lat`/`lon`/`tz` URL parameters (filled by the TRMNL plugin form fields).
 
@@ -87,7 +89,7 @@ URL parameters (all required):
 |-----------|---------|---------|
 | `token` | all | Must match `CONFIG.token` |
 | `src` | all | `cal`, `weather`, or `aqi` |
-| `tz` | all | IANA timezone (e.g. `Europe/Madrid`); controls event timestamps and the forecast timezone |
+| `tz` | all | IANA timezone (e.g. `America/New_York`); controls event timestamps and the forecast timezone |
 | `lat` / `lon` | `weather`, `aqi` | Location for Open-Meteo |
 
 ### Step 8: Create the cache-refresh trigger

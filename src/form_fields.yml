@@ -14,12 +14,12 @@
 - keyname: middleware_notice
   name: Middleware
   field_type: description
-  description: "All data (calendar, weather, air quality) is served by a free <b>Google Apps Script</b> you deploy once on your own Google account (~10 minutes). Follow the <a class='underline' href='https://github.com/guplem/trmnl-cal-weather/blob/master/MIDDLEWARE_SETUP.md' target='_blank'>middleware setup guide</a> to get the two values below."
+  description: "All data (calendar, weather, air quality) is served by a free <b>Google Apps Script</b> you deploy once on your own Google account (~10 minutes). Follow the <a class='underline' href='https://github.com/a-ravitz/trmnl-family-calendar/blob/main/MIDDLEWARE_SETUP.md' target='_blank'>middleware setup guide</a> to get the two values below."
 
 - keyname: middleware_url
   name: Middleware URL
   field_type: string
-  description: "The Apps Script web app URL from the <a class='underline' href='https://github.com/guplem/trmnl-cal-weather/blob/master/MIDDLEWARE_SETUP.md' target='_blank'>middleware setup</a>. Just the base URL ending in <code>/exec</code>, without query parameters."
+  description: "The Apps Script web app URL from the <a class='underline' href='https://github.com/a-ravitz/trmnl-family-calendar/blob/main/MIDDLEWARE_SETUP.md' target='_blank'>middleware setup</a>. Just the base URL ending in <code>/exec</code>, without query parameters."
   help_text: "Ends in /exec"
   placeholder: "https://script.google.com/macros/s/.../exec"
   group: Middleware

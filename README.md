@@ -90,6 +90,18 @@ All three plugins use the same middleware and the same three polling URLs.
 
 ## Setup
 
+Plan on about 30 minutes. You do not need a server or any coding.
+
+### What you need
+
+- **A TRMNL device and account.** Private plugins need the TRMNL Developer add-on or a BYOD (bring your own device) license. If you do not have either, turn on **Developer perks** in your TRMNL account settings.
+- **A Google account that can see the calendar.** A shared family calendar works. The free Google Apps Script service runs the middleware on this account.
+- **Your latitude, longitude, and time zone**, for the weather. Find your coordinates at [open-meteo.com](https://open-meteo.com/en/docs).
+
+You do **not** need any API keys. Google Calendar access comes from the Google account that runs the script, and Open-Meteo is free with no account.
+
+The only secret is a **token** that you make up yourself: a long random string, for example from a password manager. It goes in two places, the script's `CONFIG.token` and the TRMNL plugin settings. It stops other people from reading your calendar through the script URL. Never share the token or commit it to a repo.
+
 ### Step 1: Deploy the middleware
 
 Follow **[MIDDLEWARE_SETUP.md](MIDDLEWARE_SETUP.md)** to deploy `src/middleware/calendar_weather_proxy.gs` as a Google Apps Script web app. It takes about 10 minutes and needs no server.
